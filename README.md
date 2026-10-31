@@ -1,74 +1,96 @@
 # JRDroid
 
-Android端末とRTL-SDRを使い、JRデジタル列車無線の受信・音声再生を目指す個人開発プロジェクトです。
-**現在は開発の土台のみです。無線受信・復調・復号・音声再生はできません。**
+Android スマートフォンと RTL2832U（R820T）で、352.6250 MHz の JR 在来線デジタル列車無線・旅客一斉の音声受信を目指す **実機評価中の α 版**です。
 
-## 前提
+**2026-10-28、ユーザーから Galaxy S26 のスピーカーで実際の放送音声が聞こえ、画面消灯中も音声が継続しているとの報告を受けました。最優先の受信・音声復号・再生の経路と、画面消灯中の継続再生はユーザーの実機試験で確認されました。2026-10-26 の録画では R820T 認識・IQ 入力・フレーム同期を確認しています。長時間の安定性、音声品質の比較、通信オフや長時間の省電力状態での動作は引き続き評価が必要です。**
 
-| 項目 | 現在わかっている条件 |
-| --- | --- |
-| 対象 | JRデジタル列車無線（利用者申告：旅客一斉） |
-| 周波数 | 352.6250 MHz（352,625,000 Hz） |
-| 端末 | Android S26（利用者呼称。型番・OS・USBホスト動作は実機確認待ち） |
-| SDR | RTL-SDR / RTL2832U（チューナー型式・VID/PIDは確認待ち） |
-| 開発PC | Windows 11。ブラウザーはChrome |
+## 構成
 
-周波数は利用者指定の初期値で、通信方式を確定する情報ではありません。
-サンプルレート、変調、フレーム形式、音声コーデック、必要帯域、対応ライブラリは未確定です。
-Windowsでの受信実績はありますが、Androidへの移植可否は未検証です。
-
-## この版でできること
-
-- 起動画面に対象周波数と未実装状態を表示。
-- 接続中のUSB機器のVID/PIDを表示し、再確認。
-- USB機器の列挙のみ。アクセス許可の要求・デバイスのオープンは行いません。
-
-## 最小構成
+専用の日本語 Android アプリ（Java）と、MIT ライセンスの既存 Rust 受信処理を JNI で接続しました。音声モデルは APK に組み込み、推論に外部サービスは使いません。
 
 ```text
-app/                       Androidアプリ（Java、標準UI、外部依存なし）
-  src/main/java/jp/lxplab/jrdroid/
-    MainActivity.java      設定表示・USB機器一覧
-    receiver/              ハードウェア非依存の受信設定
-  src/main/res/values/     表示文字列
-  src/main/AndroidManifest.xml
-docs/IMPLEMENTATION.md     実装順序・未確認事項・受入条件
-gradle/README.md           Wrapper生成手順
+RTL2832U / R820T — USB-C OTG — 同じスマートフォン上の RTL-SDR ドライバー
+  → 127.0.0.1:12345 / unsigned 8-bit IQ
+  → Rust: π/4-DQPSK 復調 → 同期 → FEC/CRC → Modified RL-CELP 音声合成
+  → JNI: 8 kHz / 16-bit / mono PCM → Android AudioTrack → スピーカー
 ```
 
-当面は単一appモジュールとし、ドライバーや復号器が決まる前に多くのモジュールを作りません。
+**別途「RTL-SDR driver」アプリ（`marto.rtl_tcp_andro`）のインストールが必要です。ドライバーをこの APK には内蔵していません。** 初回のアプリ導入・開発用依存関係の取得には通信が必要ですが、受信処理に PC・外部サーバー・インターネット接続は不要な設計です。
 
-## Windows 11で開く・ビルドする
+| 項目 | 初期設定 |
+|---|---|
+| 周波数 | 352.6250 MHz、1波固定 |
+| 入力 | 240,000 complex samples/s、unsigned 8-bit I/Q |
+| RF ゲイン | 手動 40.2 dB |
+| 周波数補正 | 0 ppm |
+| 復調 | π/4-DQPSK、4,800 symbols/s |
+| 音声 | Modified RL-CELP、8 kHz、16-bit、mono |
+| 対象 ABI | arm64-v8a、ELF の 16 KiB ページ整列対応 |
+| Android | minSdk 28、compileSdk / targetSdk 36。主対象 Galaxy S26 |
 
-ChromeだけではAndroidアプリをビルドできません。Android Studio、JDK 17、Android SDK Platform 35が必要です。
-固定構成はAGP 8.7.3 / Gradle 8.9 / Java 17、minSdk 26、compileSdk・targetSdk 35です。
-最新構成を追う目的ではなく、初期開発の基準として固定しています。S26での動作は未確認です。
+240 kS/s は RTL2832U が扱える範囲で、1波の帯域を確保しながら 2.4 MSPS より入力負荷を抑えます。SDR# の NFM・8 kHz 音声出力は使わず、ドライバーの生 IQ を直接処理します。RTL-TCP に設定値の読み戻しや USB 側の欠落通知はなく、指定値が機器に適用されたことや欠落ゼロをアプリが保証するものではありません。
 
-1. このリポジトリをclone、またはGitHubの **Code → Download ZIP** から取得・展開します。
-2. Gradle 8.9を用意し、プロジェクトのルートで以下を実行します（詳細は[gradle/README.md](gradle/README.md)）。
-3. Android Studioの **Open** でルートフォルダーを開きます。SDK 35を入れ、Gradle JDKを17に設定します。
-4. SDK位置はAndroid Studioが生成する`local.properties`で指定します。このファイルはコミットしません。
+## 導入・受信
 
-```powershell
-gradle wrapper --gradle-version 8.9 --distribution-type bin
-.\gradlew.bat :app:assembleDebug :app:lintDebug
+[インストールと実機試験](docs/INSTALL.ja.md) に APK のインストール、ドライバー導入、受信開始、エラーの切り分け、実機での受け入れ条件を記載しています。
+
+旧版の「更新」が進まない場合に備え、アプリ ID を分けた「JRDroid 別インストール」版も用意しました。`./gradlew assembleStandalone` で生成でき、元の JRDroid を削除せずに導入できます。詳細は上記手順を参照してください。
+
+1. スマートフォンに RTL-SDR driver と JRDroid の APK をインストールします。
+2. RTL2832U とアンテナを OTG 接続します。
+3. JRDroid の「受信開始」を押し、ドライバーの USB アクセスを許可します。
+4. IQ 数、フレーム同期、有効音声・PCM 数が進むか確認します。
+5. 端末のメディア音量を調整します。「停止」または通知から停止できます。
+
+実際の放送がないと、有効音声や PCM のカウンターは増えません。USB の列挙・ドライバー接続・フレーム同期・音声生成は別の状態として表示します。
+
+## ビルド
+
+Linux または macOS で、JDK 21（AGP の最低要件は JDK 17）、Android SDK Platform 36、Build-tools 36.0.0、NDK 28.2.13676358、Rust 1.90.0 と `aarch64-linux-android` ターゲットを用意してください。Gradle 8.13 は同梱 wrapper が取得します。
+
+```bash
+rustup toolchain install 1.90.0 --profile minimal
+rustup target add --toolchain 1.90.0 aarch64-linux-android
+export ANDROID_HOME=/path/to/Android/Sdk
+export JAVA_HOME=/path/to/jdk-21
+./gradlew assembleDebug
 ```
 
-Wrapper一式はまだ同梱していません。初回のみインストール済みGradle 8.9を使用してください。
-生成後は`gradlew`、`gradlew.bat`、`gradle/wrapper/`一式をコミットします。
-初回の同期・ビルドには依存ファイルのダウンロードが必要です。
-APKは`app/build/outputs/apk/debug/app-debug.apk`に出力されます。
+成果物: `app/build/outputs/apk/debug/app-debug.apk`。Gradle の `preBuild` が Rust のクロスビルドを実行し、`libjrdroid.so` を APK に格納します。`Cargo.lock` を固定して使用します。ホスト用の `host-jni` 機能は通常の Android ビルドでは有効になりません。
 
-## 実装方針と確認
+Android Studio でこのディレクトリを開き、SDK Manager で上記 SDK・NDK を導入して Gradle Sync を実行できます。Rust の `cargo` / `rustup` が Android Studio の起動環境の PATH に必要です。macOS の例は `source "$HOME/.cargo/env"` 後に Android Studio を起動します。Windows は Rust ビルドスクリプトの対象外のため、WSL/Linux でビルドしてください。
 
-[実装方針](docs/IMPLEMENTATION.md)を参照してください。最初の実機確認は、USB未接続時の案内と接続後のVID/PID表示です。
-この初期構成を作成した環境にはAndroid SDKとGradleがなく、APKビルド・lint・実機試験は未実施です。
+このクラウド環境では以下を使用します。
 
-## 参考資料
+```bash
+bash scripts/setup-cloud.sh
+source /workspace/toolchains/activate.sh
+bash scripts/check.sh
+./gradlew --no-daemon assembleDebug lintDebug
+```
 
-- [Android USB host](https://developer.android.com/develop/connectivity/usb/host)
-- [Android Gradle Plugin 8.7の互換性](https://developer.android.com/build/releases/past-releases/agp-8-7-0-release-notes)
-- [Gradle Wrapper](https://docs.gradle.org/8.9/userguide/gradle_wrapper.html)
+クラウド用スクリプトは `/workspace/toolchains` にツールを置きます。Debian の既存 OpenJDK 21 runtime を前提に、JDK の開発部分、SDK、NDK、Rust、Gradle を取得します。TLS と公式公開チェックサムを検証し、ソースの reset・コミット・push は行いません。Android SDK の標準ライセンスを受諾する処理を含みます。
 
-外部の受信ソフトや復号ライブラリは同梱していません。採用時にAPI・ライセンス・Android対応を確認します。
-受信音声や個人の録音は、この公開リポジトリへコミットしないでください。
+## 検証と現在の限界
+
+- Rust の選択した受信・DSP・音声テスト: **90 成功、1 ignored、失敗 0**。ignored は実収録 IQ と環境変数が必要な上流の 22波性能試験で、1波の実機受信確認の代用にはしていません。
+- 新規テストには、奇数バイト境界の IQ 保持、不正入力、合成した π/4-DQPSK IQ からの同期・音声合成、終端 flush を含みます。
+- JVM のプロトコルテスト 4項目、実 JNI のホスト試験 2項目: 成功。JNI 試験で合成 IQ から **28 有効音声フレーム・6,720 PCM サンプル**を確認しました。7フレームの先読み分はこのホスト JNI 試験の終了時に破棄しています。
+- APK ビルド、Android lint、署名検証、16 KiB 整列検査: 実行結果は [検証記録](docs/VALIDATION.ja.md) を参照してください。
+- ユーザー提供録画で **実機の R820T 接続・Android 上の JNI 受信処理・フレーム同期**を確認し、2026-10-28 にユーザーから **Galaxy S26 のスピーカーで実放送の音声を確認し、画面消灯中も音声が継続している**との報告を受けました。音声成功の記録はユーザー報告によるもので、クラウドで再現した実機試験ではありません。**長時間のリアルタイム性能、通信オフ、長時間の省電力状態・通話割り込み・抜き差しは未検証**です。
+- データ電文の表示、周波数・ゲイン・ppm の編集、録音、複数波、USB ドライバー内蔵は未実装です。
+- 音声は参照実装の推定モデルを含む合成です。ビット完全な規範デコーダや聞き取り品質を保証しません。
+
+## ソースとライセンス
+
+GitHub の `lxp-lab1031/JRDroid` への登録方法と、音声受信確認版のソース ZIP の内容は [公開手順](docs/PUBLISH.ja.md) を参照してください。
+
+[調査結果](docs/RESEARCH.ja.md) に参照コミット、ライセンス、DSP/同期/音声 API、方式比較、技術的な課題をまとめています。
+
+- `app/`: Android UI・サービス・AudioTrack・RTL-TCP クライアント。
+- `native/bridge/`: IQ の変換、受信パイプライン、JNI、合成信号テスト。
+- `native/vendor/`: 上流の固定コミットから取り込んだ未改変ソースとライセンス。
+- `scripts/`: ビルド、検証、クラウド導入、ライセンス文書生成。
+- `docs/`: 調査、導入、実機評価と検証記録。
+
+JRDroid の新規コードは MIT。上流の JR 受信処理と CELP も MIT で、元の著作権・ライセンスを保持しています。Rust の依存ライブラリのライセンス全文は APK 内の「オープンソースライセンス」と `app/src/main/assets/THIRD_PARTY_NOTICES.txt` に収録しています。別インストールの RTL-SDR ドライバーは GPL-2.0-or-later などのライセンスで、今回の APK にはソース・バイナリを同梱していません。

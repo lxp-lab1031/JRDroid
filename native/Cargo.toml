@@ -1,0 +1,19 @@
+[workspace]
+members = ["bridge", "vendor/crates/jr-conventional-dsp", "vendor/crates/jr-voice", "vendor/crates/receiver-core", "vendor/crates/demod-eval"]
+default-members = ["bridge"]
+resolver = "2"
+
+[workspace.package]
+version = "1.7.0"
+authors = ["KIRISHIKI Yudai <yudai.kirishiki@protonmail.com>"]
+edition = "2021"
+publish = false
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+

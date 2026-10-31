@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">JRDroid</string>
-    <string name="receiver_status">開発準備版：受信・復号・再生は未実装</string>
-    <string name="refresh_usb">USB機器を再確認</string>
-</resources>
