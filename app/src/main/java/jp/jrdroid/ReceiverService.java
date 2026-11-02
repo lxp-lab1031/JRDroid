@@ -28,6 +28,11 @@ public final class ReceiverService extends Service {
     private PowerManager.WakeLock wake;
     private AudioManager audioManager;
     private AudioFocusRequest focus;
+    private volatile boolean uiVisible, refreshStats;
+    void setUiVisible(boolean visible) {
+        uiVisible = visible;
+        if (visible) refreshStats = true;
+    }
 
     @Override public void onCreate() {
         super.onCreate();
@@ -88,7 +93,8 @@ public final class ReceiverService extends Service {
             for (AudioDeviceInfo d : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
                 if (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) { track.setPreferredDevice(d); break; }
             }
-            track.play(); audio.clear(); queuedSamples = 0;
+            // Open the output now; start playback only when actual PCM arrives.
+            audio.clear(); queuedSamples = 0;
             audioWorker = new Thread(this::playAudio, "JRDroid-audio"); audioWorker.start();
             Socket connection = new Socket(); socket = connection;
             if (!running) throw new InterruptedIOException("停止しました");
@@ -101,12 +107,12 @@ public final class ReceiverService extends Service {
             RtlTcp.configure(connection.getOutputStream(),commands,selectedFrequency);
             nativeRx = new NativeReceiver(selectedFrequency);
             state = "IQ 受信中・フレーム同期待ち";
-            byte[] block = new byte[16384];
+            byte[] block = new byte[IqBlockReader.BLOCK_BYTES];
             long lastStatus = 0;
             // Start arguments already set the rate/frequency; reject stale startup IQ for 0.25 s.
             int settle = RtlTcp.SAMPLE_RATE / 2;
             while (running) {
-                int n = in.read(block);
+                int n = IqBlockReader.read(in,block);
                 if (n < 0) throw new EOFException("SDR ドライバーとの接続が切れました");
                 if (n == 0) continue;
                 if (settle > 0) {
@@ -124,8 +130,10 @@ public final class ReceiverService extends Service {
                 }
                 long now = SystemClock.elapsedRealtime();
                 if (now-lastWake >= 5*60*1000L) { wake.acquire(10*60*1000L); lastWake = now; }
-                if (now-lastStatus >= 400) {
-                    stats = nativeRx.snapshot();
+                boolean diagnostics = uiVisible;
+                if (refreshStats || now-lastStatus >= (diagnostics ? 1000 : 5000)) {
+                    refreshStats = false;
+                    stats = nativeRx.snapshot(diagnostics);
                     org.json.JSONObject s = new org.json.JSONObject(stats);
                     state = s.optBoolean("frame_locked") ? "フレーム同期中" : "IQ 受信中・フレーム同期待ち";
                     lastStatus = now;
@@ -141,6 +149,7 @@ public final class ReceiverService extends Service {
                 try { c.close(); } catch (IOException ignored) {}
             }
             if (nativeRx != null) nativeRx.close();
+            pauseAudio(); // Unblock any blocking AudioTrack write before joining.
             Thread a = audioWorker;
             if (a != null) {
                 a.interrupt();
@@ -158,30 +167,42 @@ public final class ReceiverService extends Service {
         }
     }
     private void playAudio() {
+        final AudioTrack output = track;
+        PcmPlayback playback = new PcmPlayback();
+        PcmPlayback.Output adapter = new PcmPlayback.Output() {
+            public void play() { output.play(); }
+            public void pause() { output.pause(); }
+            public void flush() { output.flush(); }
+            public int write(short[] pcm,int offset,int count) {
+                return output.write(pcm,offset,count,AudioTrack.WRITE_BLOCKING);
+            }
+            public long playedFrames() { return Integer.toUnsignedLong(output.getPlaybackHeadPosition()); }
+        };
         try {
             while (running) {
-                short[] pcm = audio.poll(200,TimeUnit.MILLISECONDS);
-                if (pcm == null) continue;
+                short[] pcm = playback.isPlaying() ? audio.poll(1000,TimeUnit.MILLISECONDS) : audio.take();
+                if (pcm == null) { playback.pauseIfDrained(adapter); continue; }
                 synchronized (audio) { queuedSamples -= pcm.length; }
-                int offset = 0;
-                while (running && offset < pcm.length) {
-                    int written = track.write(pcm,offset,pcm.length-offset,AudioTrack.WRITE_NON_BLOCKING);
-                    if (written < 0) throw new IOException("音声出力エラー: " + written);
-                    if (written == 0) Thread.sleep(5);
-                    offset += written;
-                }
+                playback.write(adapter,pcm,() -> running);
             }
         } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
         catch (Exception e) { if (running) { error = explain(e); state = "音声エラー"; stopReception(); } }
     }
     void stopReception() {
         running = false;
+        pauseAudio();
+        Thread a = audioWorker;
+        if (a != null) a.interrupt();
         if (worker != null) state = "停止処理中";
         Socket c = socket;
         if (c != null) {
             try { RtlTcp.command(c.getOutputStream(),0x7e,0); } catch (IOException ignored) {}
             try { c.close(); } catch (IOException ignored) {}
         }
+    }
+    private void pauseAudio() {
+        AudioTrack t = track;
+        if (t != null) { try { t.pause(); } catch (IllegalStateException ignored) {} }
     }
     boolean busy() { return worker != null; }
     private String explain(Throwable e) {

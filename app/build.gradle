@@ -9,8 +9,8 @@ android {
         applicationId 'jp.jrdroid'
         minSdk 28
         targetSdk 36
-        versionCode 2
-        versionName '0.2.0-alpha'
+        versionCode 3
+        versionName '0.2.1-alpha'
         resValue 'string', 'app_name', 'JRDroid'
         ndk { abiFilters 'arm64-v8a' }
         testInstrumentationRunner 'android.test.InstrumentationTestRunner'

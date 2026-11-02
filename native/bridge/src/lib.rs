@@ -15,6 +15,9 @@ pub struct Receiver {
     pipeline: Pipeline,
     pending_i: Option<u8>,
     last_audio: Option<(u64, u32)>,
+    iq_buffer: Vec<Complex32>,
+    #[cfg(any(target_os = "android", feature = "host-jni"))]
+    input_buffer: Vec<i8>,
 }
 impl Receiver {
     pub fn new() -> Result<Self, String> {
@@ -44,13 +47,17 @@ impl Receiver {
             )?,
             pending_i: None,
             last_audio: None,
+            iq_buffer: Vec::new(),
+            #[cfg(any(target_os = "android", feature = "host-jni"))]
+            input_buffer: Vec::new(),
         })
     }
     pub fn process(&mut self, bytes: &[u8]) -> Result<Vec<i16>, String> {
         if bytes.len() > 131_072 {
             return Err("IQ block too large".into());
         }
-        let mut iq = Vec::with_capacity(bytes.len() / 2 + 1);
+        self.iq_buffer.clear();
+        self.iq_buffer.reserve(bytes.len() / 2 + 1);
         let sample = |i: u8, q: u8| Complex32 {
             real: (i as f32 - 127.5) / 128.0,
             imaginary: (q as f32 - 127.5) / 128.0,
@@ -58,18 +65,19 @@ impl Receiver {
         let mut at = 0;
         if let Some(i) = self.pending_i.take() {
             if let Some(&q) = bytes.first() {
-                iq.push(sample(i, q));
+                self.iq_buffer.push(sample(i, q));
                 at = 1;
             } else {
                 self.pending_i = Some(i);
             }
         }
         let mut pairs = bytes[at..].chunks_exact(2);
-        iq.extend(pairs.by_ref().map(|p| sample(p[0], p[1])));
+        self.iq_buffer
+            .extend(pairs.by_ref().map(|p| sample(p[0], p[1])));
         if let Some(&i) = pairs.remainder().first() {
             self.pending_i = Some(i);
         }
-        let audio = self.pipeline.process(&iq)?;
+        let audio = self.pipeline.process(&self.iq_buffer)?;
         Ok(self.render(audio))
     }
     fn render(&mut self, audio: Vec<receiver_core::pipeline::Audio>) -> Vec<i16> {
@@ -92,7 +100,14 @@ impl Receiver {
         Ok(self.render(audio))
     }
     pub fn status(&mut self) -> String {
-        let s = self.pipeline.snapshot();
+        self.status_with_diagnostics(true)
+    }
+    pub fn status_with_diagnostics(&mut self, diagnostics: bool) -> String {
+        // Constellation/EVM and cloned message history are only needed on screen.
+        if diagnostics {
+            self.pipeline.snapshot();
+        }
+        let s = &self.pipeline.status;
         serde_json::json!({
             "frequency_hz": self.pipeline.config.frequency_hz as u32,
             "format": self.pipeline.config.format,
@@ -101,7 +116,8 @@ impl Receiver {
             "voice_frames": s.voice_frames, "rejected_voice": s.rejected_voice,
             "audio_frames": s.audio_frames, "frame_locked": s.frame_locked,
             "carrier_locked": s.carrier_locked, "frequency_error_hz": s.frequency_error_hz,
-            "evm_percent": s.evm_percent, "input_dbfs": s.input_dbfs,
+            "diagnostics_current": diagnostics,
+            "evm_percent": if diagnostics { Some(s.evm_percent) } else { None }, "input_dbfs": s.input_dbfs,
         })
         .to_string()
     }
@@ -166,11 +182,23 @@ mod android {
             if count < 0 || count > length || count > 131_072 {
                 return Err("Invalid IQ length".into());
             }
-            let mut bytes = vec![0i8; count as usize];
-            env.get_byte_array_region(&input, 0, &mut bytes)
-                .map_err(|e| e.to_string())?;
-            let bytes: Vec<u8> = bytes.into_iter().map(|b| b as u8).collect();
-            let pcm = unsafe { receiver(h)? }.process(&bytes)?;
+            let r = unsafe { receiver(h)? };
+            let mut bytes = std::mem::take(&mut r.input_buffer);
+            bytes.resize(count as usize, 0);
+            let result = (|| {
+                env.get_byte_array_region(&input, 0, &mut bytes)
+                    .map_err(|e| e.to_string())?;
+                // i8 and u8 have identical layout; this read-only view preserves all bits.
+                // The allocation is owned here, outside Receiver, during process().
+                let unsigned =
+                    unsafe { std::slice::from_raw_parts(bytes.as_ptr().cast::<u8>(), bytes.len()) };
+                r.process(unsigned)
+            })();
+            r.input_buffer = bytes;
+            let pcm = result?;
+            if pcm.is_empty() {
+                return Ok(std::ptr::null_mut());
+            }
             let out = env
                 .new_short_array(pcm.len() as i32)
                 .map_err(|e| e.to_string())?;
@@ -184,9 +212,10 @@ mod android {
         mut env: JNIEnv,
         _: JClass,
         h: jlong,
+        diagnostics: jni::sys::jboolean,
     ) -> jstring {
         guarded(&mut env, |env| {
-            let s = unsafe { receiver(h)? }.status();
+            let s = unsafe { receiver(h)? }.status_with_diagnostics(diagnostics != 0);
             Ok(env.new_string(s).map_err(|e| e.to_string())?.into_raw())
         })
     }
@@ -227,6 +256,54 @@ mod tests {
                 }
             );
         }
+    }
+    #[test]
+    fn iq_buffers_are_reused_and_light_status_preserves_counters() {
+        let mut r = Receiver::new().unwrap();
+        let input = vec![127; 32768];
+        r.process(&input).unwrap();
+        let capacity = r.iq_buffer.capacity();
+        let ptr = r.iq_buffer.as_ptr();
+        for _ in 0..4 {
+            assert!(r.process(&input).unwrap().is_empty());
+        }
+        assert_eq!(r.iq_buffer.capacity(), capacity);
+        assert_eq!(r.iq_buffer.as_ptr(), ptr);
+        let light: serde_json::Value =
+            serde_json::from_str(&r.status_with_diagnostics(false)).unwrap();
+        let full: serde_json::Value = serde_json::from_str(&r.status()).unwrap();
+        assert_eq!(light["iq_samples"], 81920);
+        assert_eq!(light["iq_samples"], full["iq_samples"]);
+        assert!(light["evm_percent"].is_null());
+        assert_eq!(light["diagnostics_current"], false);
+        assert_eq!(full["diagnostics_current"], true);
+    }
+    #[test]
+    fn larger_iq_batches_produce_identical_pcm() {
+        let envelope = synthesis::voice(&[0x15; 20], false);
+        let dibits: Vec<_> = (0..30)
+            .flat_map(|_| jr_demod_eval::envelope_dibits(&envelope))
+            .collect();
+        let iq = jr_demod_eval::modulate(&dibits, 50);
+        let bytes: Vec<u8> = iq
+            .iter()
+            .flat_map(|z| {
+                [z.real, z.imaginary].map(|v| (v * 45.0 + 127.5).clamp(0., 255.).round() as u8)
+            })
+            .collect();
+        let decode = |size| {
+            let mut r = Receiver::new().unwrap();
+            let mut pcm = Vec::new();
+            for chunk in bytes.chunks(size) {
+                pcm.extend(r.process(chunk).unwrap());
+            }
+            pcm.extend(r.flush().unwrap());
+            pcm
+        };
+        let short = decode(8191);
+        let batched = decode(32768);
+        assert!(short.len() >= 6400);
+        assert_eq!(short, batched);
     }
     #[test]
     fn odd_usb_chunks_preserve_iq_pairs_and_noise_does_not_make_audio() {

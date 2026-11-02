@@ -2,6 +2,10 @@
 
 公開先: https://github.com/lxp-lab1031/JRDroid
 
+## v0.2.1-alpha: 省電力処理版
+
+2026-11-02 に音声出力の待機・休止、IQバッファー再利用、画面非表示中の診断削減を追加しました。生成物は `JRDroid-0.2.1-alpha-debug.apk` / `JRDroid-0.2.1-alpha-standalone.apk` / `JRDroid-0.2.1-alpha-source.zip` です。実機での電池消費改善率は未測定です。[省電力処理と比較試験](POWER.ja.md) を参照してください。
+
 ## v0.2.0-alpha: D チャンネル選局版
 
 2026-11-02 に、停止中のDチャンネル選択・MHz直接入力・6.25 kHzステップ・選択保存を追加しました。通常版と別インストール版を引き続きビルドでき、生成物は `JRDroid-0.2.0-alpha-debug.apk` / `JRDroid-0.2.0-alpha-standalone.apk` / `JRDroid-0.2.0-alpha-source.zip` です。周波数選択の実機試験は未実施です。詳細は [選局手順](D_CHANNELS.ja.md) と [検証記録](VALIDATION.ja.md) を参照してください。

@@ -1,0 +1,3 @@
+1699ca6a43742b29e7d6c369c9ccaceb10fdb4c1699b192395fea0ccc92197ab  JRDroid-0.2.1-alpha-debug.apk
+1bad05435c644559c192f940cc28668f6f353721cf805b829e91b9ac21425e0a  JRDroid-0.2.1-alpha-standalone.apk
+3ef221a9f15c20770e3aa34496e9fe3d108596450331f3be721030e05dc52084  JRDroid-0.2.1-alpha-source.zip

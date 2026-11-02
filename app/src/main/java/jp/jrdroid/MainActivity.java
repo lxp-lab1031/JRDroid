@@ -29,12 +29,12 @@ public final class MainActivity extends Activity {
     private Button start, stop, channelButton, lowerFrequency, higherFrequency;
     private final ServiceConnection connection = new ServiceConnection() {
         public void onServiceConnected(ComponentName name, IBinder binder) {
-            service = ((ReceiverService.LocalBinder)binder).service(); render();
+            service = ((ReceiverService.LocalBinder)binder).service(); service.setUiVisible(true); render();
         }
         public void onServiceDisconnected(ComponentName name) { service = null; }
     };
     private final Runnable poll = new Runnable() {
-        public void run() { render(); handler.postDelayed(this,500); }
+        public void run() { render(); handler.postDelayed(this,1000); }
     };
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -101,6 +101,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onStop() {
         handler.removeCallbacks(poll);
+        if (service != null) service.setUiVisible(false);
         if (bound) { unbindService(connection); bound = false; service = null; }
         super.onStop();
     }
@@ -197,7 +198,8 @@ public final class MainActivity extends Activity {
         try {
             JSONObject j = new JSONObject(s == null || (!busy && s.frequencyHz != selectedFrequencyHz) ? "{}" : s.stats);
             countersView.setText(String.format(Locale.JAPAN,"同期フレーム  %,d\n有効音声  %,d  /  PCM  %,d",j.optLong("synchronized_frames"),j.optLong("voice_frames"),j.optLong("audio_frames")));
-            detailView.setText(String.format(Locale.JAPAN,"IQ: %,d samples\n入力: %.1f dBFS  /  EVM: %.1f %%\n周波数ずれ: %+.1f Hz",j.optLong("iq_samples"),j.optDouble("input_dbfs",-120),j.optDouble("evm_percent",0),j.optDouble("frequency_error_hz",0)));
+            String evm = j.isNull("evm_percent") ? "未計測" : String.format(Locale.JAPAN,"%.1f %%",j.optDouble("evm_percent",0));
+            detailView.setText(String.format(Locale.JAPAN,"IQ: %,d samples\n入力: %.1f dBFS  /  EVM: %s\n周波数ずれ: %+.1f Hz",j.optLong("iq_samples"),j.optDouble("input_dbfs",-120),evm,j.optDouble("frequency_error_hz",0)));
         } catch (org.json.JSONException e) { detailView.setText("受信統計を読み取れません"); }
     }
     private void showLicenses() {
