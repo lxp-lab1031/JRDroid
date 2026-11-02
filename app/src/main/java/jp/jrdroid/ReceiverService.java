@@ -12,12 +12,14 @@ import java.util.concurrent.TimeUnit;
 /** Owns reception independently of activity redraws and screen power state. */
 public final class ReceiverService extends Service {
     static final String START = "jp.jrdroid.START", STOP = "jp.jrdroid.STOP";
+    static final String FREQUENCY_EXTRA = "frequency_hz";
     private static final String CHANNEL = "receiver";
     private static final int NOTIFICATION = 1;
     public final class LocalBinder extends Binder { ReceiverService service() { return ReceiverService.this; } }
     private final LocalBinder binder = new LocalBinder();
     volatile String state = "停止中", error = "", stats = "{}", tuner = "未接続";
     volatile boolean running;
+    volatile int frequencyHz = DChannels.DEFAULT_HZ;
     private volatile Socket socket;
     private volatile Thread worker, audioWorker;
     private volatile AudioTrack track;
@@ -40,11 +42,17 @@ public final class ReceiverService extends Service {
         if (intent == null) { stopSelf(); return START_NOT_STICKY; }
         if (STOP.equals(intent.getAction())) { stopReception(); return START_NOT_STICKY; }
         if (START.equals(intent.getAction()) && worker == null) {
+            int requested = intent.getIntExtra(FREQUENCY_EXTRA,DChannels.DEFAULT_HZ);
+            if (!DChannels.contains(requested)) {
+                error = "受信周波数が D タイプの対応範囲外です。"; state = "設定エラー";
+                stopSelf(); return START_NOT_STICKY;
+            }
+            frequencyHz = requested;
             startForeground(NOTIFICATION, notification());
             running = true; state = "ドライバーに接続中"; error = ""; stats = "{}";
             int[] commands = intent.getIntArrayExtra("commands");
             // JNI model initialization and DSP have a larger stack than a UI callback.
-            worker = new Thread(null, () -> receive(commands), "JRDroid-DSP", 8 * 1024 * 1024);
+            worker = new Thread(null, () -> receive(commands,requested), "JRDroid-DSP", 8 * 1024 * 1024);
             worker.start();
         }
         return START_NOT_STICKY;
@@ -53,10 +61,11 @@ public final class ReceiverService extends Service {
         PendingIntent open = PendingIntent.getActivity(this,0,new Intent(this, MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop = PendingIntent.getService(this,1,new Intent(this, ReceiverService.class).setAction(STOP),PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(this,CHANNEL).setSmallIcon(jp.jrdroid.R.drawable.ic_radio)
-            .setContentTitle("JRDroid · 352.6250 MHz").setContentText("受信中 · タップして状態を表示")
+            .setContentTitle("JRDroid · "+DChannels.mhz(frequencyHz)+" MHz")
+            .setContentText(DChannels.label(frequencyHz)+" · タップして状態を表示")
             .setContentIntent(open).setOngoing(true).addAction(new Notification.Action.Builder(null,"停止",stop).build()).build();
     }
-    private void receive(int[] commands) {
+    private void receive(int[] commands, int selectedFrequency) {
         NativeReceiver nativeRx = null;
         try {
             wake.acquire(10 * 60 * 1000L);
@@ -89,8 +98,8 @@ public final class ReceiverService extends Service {
             DataInputStream in = new DataInputStream(connection.getInputStream());
             RtlTcp.Header header = RtlTcp.readHeader(in);
             tuner = "RTL2832U / " + header.tunerName();
-            RtlTcp.configure(connection.getOutputStream(),commands);
-            nativeRx = new NativeReceiver();
+            RtlTcp.configure(connection.getOutputStream(),commands,selectedFrequency);
+            nativeRx = new NativeReceiver(selectedFrequency);
             state = "IQ 受信中・フレーム同期待ち";
             byte[] block = new byte[16384];
             long lastStatus = 0;

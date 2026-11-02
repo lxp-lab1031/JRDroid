@@ -7,6 +7,9 @@ use receiver_core::{
 
 pub const FREQUENCY: f64 = 352_625_000.0;
 pub const RATE: f64 = 240_000.0;
+pub const MIN_FREQUENCY: u32 = 352_537_500;
+pub const MAX_FREQUENCY: u32 = 352_668_750;
+pub const CHANNEL_STEP: u32 = 6_250;
 
 pub struct Receiver {
     pipeline: Pipeline,
@@ -15,16 +18,29 @@ pub struct Receiver {
 }
 impl Receiver {
     pub fn new() -> Result<Self, String> {
+        Self::at_frequency(FREQUENCY as u32)
+    }
+    pub fn at_frequency(hz: u32) -> Result<Self, String> {
+        if !(MIN_FREQUENCY..=MAX_FREQUENCY).contains(&hz)
+            || !(hz - MIN_FREQUENCY).is_multiple_of(CHANNEL_STEP)
+        {
+            return Err("Select a D-type channel: 352.53750–352.66875 MHz, 6.25 kHz steps".into());
+        }
+        let frequency = f64::from(hz);
         Ok(Self {
             pipeline: Pipeline::new(
                 ChannelConfig {
-                    id: "passenger".into(),
-                    label: "旅客一斉".into(),
-                    frequency_hz: FREQUENCY,
-                    format: Format::Common,
+                    id: format!("jr-{hz}"),
+                    label: if hz == FREQUENCY as u32 {
+                        "旅客一斉".into()
+                    } else {
+                        format!("D {hz} Hz")
+                    },
+                    frequency_hz: frequency,
+                    format: Format::for_frequency(frequency),
                 },
                 RATE,
-                FREQUENCY,
+                frequency,
             )?,
             pending_i: None,
             last_audio: None,
@@ -78,6 +94,8 @@ impl Receiver {
     pub fn status(&mut self) -> String {
         let s = self.pipeline.snapshot();
         serde_json::json!({
+            "frequency_hz": self.pipeline.config.frequency_hz as u32,
+            "format": self.pipeline.config.format,
             "iq_samples": s.iq_samples, "frames": s.frames,
             "synchronized_frames": s.synchronized_frames,
             "voice_frames": s.voice_frames, "rejected_voice": s.rejected_voice,
@@ -128,9 +146,11 @@ mod android {
     pub extern "system" fn Java_jp_jrdroid_NativeReceiver_create(
         mut env: JNIEnv,
         _: JClass,
+        frequency_hz: i32,
     ) -> jlong {
         guarded(&mut env, |_| {
-            Ok(Box::into_raw(Box::new(Receiver::new()?)) as jlong)
+            let hz = u32::try_from(frequency_hz).map_err(|_| "Invalid receive frequency")?;
+            Ok(Box::into_raw(Box::new(Receiver::at_frequency(hz)?)) as jlong)
         })
     }
     #[no_mangle]
@@ -185,6 +205,30 @@ mod tests {
     use super::*;
     use receiver_core::{frame::Synchronizer, synthesis};
     #[test]
+    fn frequencies_are_validated_and_data_formats_follow_upstream() {
+        for hz in [
+            0,
+            MIN_FREQUENCY - 1,
+            MIN_FREQUENCY + 1,
+            MAX_FREQUENCY + CHANNEL_STEP,
+            u32::MAX,
+        ] {
+            assert!(Receiver::at_frequency(hz).is_err(), "{hz}");
+        }
+        for hz in (MIN_FREQUENCY..=MAX_FREQUENCY).step_by(CHANNEL_STEP as usize) {
+            let r = Receiver::at_frequency(hz).unwrap();
+            assert_eq!(r.pipeline.config.frequency_hz, f64::from(hz));
+            assert_eq!(
+                r.pipeline.config.format,
+                if hz == FREQUENCY as u32 {
+                    Format::Common
+                } else {
+                    Format::Slotted
+                }
+            );
+        }
+    }
+    #[test]
     fn odd_usb_chunks_preserve_iq_pairs_and_noise_does_not_make_audio() {
         let mut a = Receiver::new().unwrap();
         let mut b = Receiver::new().unwrap();
@@ -237,19 +281,21 @@ mod tests {
                 [z.real, z.imaginary].map(|v| (v * 45.0 + 127.5).clamp(0.0, 255.0).round() as u8)
             })
             .collect();
-        let mut r = Receiver::new().unwrap();
-        let mut pcm = Vec::new();
-        for chunk in bytes.chunks(8191) {
-            pcm.extend(r.process(chunk).unwrap());
+        for hz in (MIN_FREQUENCY..=MAX_FREQUENCY).step_by(CHANNEL_STEP as usize) {
+            let mut r = Receiver::at_frequency(hz).unwrap();
+            let mut pcm = Vec::new();
+            for chunk in bytes.chunks(8191) {
+                pcm.extend(r.process(chunk).unwrap());
+            }
+            pcm.extend(r.flush().unwrap());
+            assert!(
+                r.pipeline.status.synchronized_frames >= 20,
+                "{hz}: {}",
+                r.status()
+            );
+            assert!(r.pipeline.status.voice_frames >= 20, "{hz}: {}", r.status());
+            assert!(pcm.len() >= 20 * 320);
+            assert!(pcm.iter().any(|&s| s != 0));
         }
-        pcm.extend(r.flush().unwrap());
-        assert!(
-            r.pipeline.status.synchronized_frames >= 20,
-            "{}",
-            r.status()
-        );
-        assert!(r.pipeline.status.voice_frames >= 20, "{}", r.status());
-        assert!(pcm.len() >= 20 * 320);
-        assert!(pcm.iter().any(|&s| s != 0));
     }
 }

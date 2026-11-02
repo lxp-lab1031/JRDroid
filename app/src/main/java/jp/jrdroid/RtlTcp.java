@@ -9,7 +9,6 @@ import java.util.Arrays;
 /** Standard unsigned 8-bit RTL-TCP protocol. Never connects off the device. */
 final class RtlTcp {
     static final int PORT = 12345;
-    static final int FREQUENCY = 352625000;
     static final int SAMPLE_RATE = 240000;
     static final int GAIN_TENTHS = 402;
     static final class Header {
@@ -30,7 +29,8 @@ final class RtlTcp {
         DataOutputStream data = new DataOutputStream(out);
         data.writeByte(id); data.writeInt(value); data.flush();
     }
-    static void configure(OutputStream out, int[] supported) throws IOException {
+    static void configure(OutputStream out, int[] supported, int frequencyHz) throws IOException {
+        DChannels.require(frequencyHz);
         int[] required = {1,2,3,4,5,8};
         if (supported != null) for (int id : required) {
             boolean found = false;
@@ -38,7 +38,7 @@ final class RtlTcp {
             if (!found) throw new IOException("ドライバーが必要な RTL-TCP コマンドに非対応です: " + id);
         }
         command(out, 2, SAMPLE_RATE);
-        command(out, 1, FREQUENCY);
+        command(out, 1, frequencyHz);
         command(out, 5, 0); // frequency correction: 0 ppm
         command(out, 8, 0); // RTL2832 digital AGC off
         command(out, 3, 1); // manual tuner gain
