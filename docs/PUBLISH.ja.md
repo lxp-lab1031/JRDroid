@@ -2,6 +2,10 @@
 
 公開先: https://github.com/lxp-lab1031/JRDroid
 
+## v0.2.2-alpha: 停止処理の修正版
+
+2026-11-03 に、停止時の終了処理と音声出力の所有スレッドを修正し、クラッシュ診断画面を追加しました。生成物は `JRDroid-0.2.2-alpha-debug.apk` / `JRDroid-0.2.2-alpha-standalone.apk` / `JRDroid-0.2.2-alpha-source.zip` です。ホスト回帰試験とAPKビルドは成功し、実機での解消は未確認です。[停止処理の修正](STOP_FIX.ja.md) を参照してください。
+
 ## v0.2.1-alpha: 省電力処理版
 
 2026-11-02 に音声出力の待機・休止、IQバッファー再利用、画面非表示中の診断削減を追加しました。生成物は `JRDroid-0.2.1-alpha-debug.apk` / `JRDroid-0.2.1-alpha-standalone.apk` / `JRDroid-0.2.1-alpha-source.zip` です。実機での電池消費改善率は未測定です。[省電力処理と比較試験](POWER.ja.md) を参照してください。

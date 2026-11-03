@@ -6,7 +6,7 @@ import java.util.*;
 /** Verifies audio tails and fragmented IQ survive the power-saving changes. */
 public final class PowerPathTest {
     private static void check(boolean value) { if (!value) throw new AssertionError(); }
-    private static final class Output implements PcmPlayback.Output {
+    private static class Output implements PcmPlayback.Output {
         final List<Short> samples = new ArrayList<>();
         int plays, pauses, flushes, maxWrite=37;
         long head;
@@ -14,6 +14,7 @@ public final class PowerPathTest {
         public void pause() { pauses++; }
         public void flush() { flushes++; head=0; }
         public long playedFrames() { return head; }
+        public void awaitSpace() { maxWrite=37; }
         public int write(short[] pcm,int offset,int count) {
             if (maxWrite<=0) return maxWrite;
             int n=Math.min(maxWrite,count);
@@ -46,7 +47,9 @@ public final class PowerPathTest {
         player.write(out,pcm,() -> true); check(out.plays==2 && out.samples.size()==640);
         out.head=320; check(player.pauseIfDrained(out)); check(out.flushes==2);
         System.out.println("PASS: partial PCM writes, idle pause after drain and restart preserve audio tails");
-        for (int result : new int[]{0,-6}) {
+        Output full=new Output(); full.maxWrite=0;
+        new PcmPlayback().write(full,pcm,() -> true); check(full.samples.size()==320);
+        for (int result : new int[]{-6}) {
             Output broken = new Output(); broken.maxWrite=result;
             try { new PcmPlayback().write(broken,pcm,() -> true); throw new AssertionError(); }
             catch (IOException expected) { }

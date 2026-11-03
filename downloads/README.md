@@ -1,11 +1,13 @@
-# v0.2.1-alpha — 省電力処理版
+# v0.2.2-alpha — 停止処理修正版
 
-通常版: [APK](https://github.com/lxp-lab1031/JRDroid/raw/refs/heads/power-saving-20261102/downloads/JRDroid-0.2.1-alpha-debug.apk)
+通常版: [APK](https://github.com/lxp-lab1031/JRDroid/raw/refs/heads/stop-fix-20261103/downloads/JRDroid-0.2.2-alpha-debug.apk)
 
-別インストール版: [APK](https://github.com/lxp-lab1031/JRDroid/raw/refs/heads/power-saving-20261102/downloads/JRDroid-0.2.1-alpha-standalone.apk)
+別インストール版: [APK](https://github.com/lxp-lab1031/JRDroid/raw/refs/heads/stop-fix-20261103/downloads/JRDroid-0.2.2-alpha-standalone.apk)
 
-ソース一式: [ZIP](https://github.com/lxp-lab1031/JRDroid/raw/refs/heads/power-saving-20261102/downloads/JRDroid-0.2.1-alpha-source.zip)
+ソース: [ZIP](https://github.com/lxp-lab1031/JRDroid/raw/refs/heads/stop-fix-20261103/downloads/JRDroid-0.2.2-alpha-source.zip)
 
-同じ種類の旧版へ更新してください。22波の選局は引き続き停止中に行います。無音時の出力休止・書き込み待機・IQバッファー再利用・非表示中の診断削減を追加しました。音声遅延が最大約68 ms分増える場合があります。電池持ちの改善率とAndroid実機での休止・復帰は未確認です。
+同じ種類の旧版へ更新してください。停止ボタンで音声出力と通信を直接停止する構造を改め、音声出力の所有スレッドと解放完了待ちを修正しました。実機での解消はまだ確認していません。
 
-[省電力処理とホスト比較](../docs/POWER.ja.md) / [選局手順](../docs/D_CHANNELS.ja.md)
+停止→選局→受信開始を確認してください。まだ落ちる場合は、再起動後に画面下の「停止・クラッシュの診断情報」を開き、「コピー」した内容を使って原因を確認できます。Androidが過去の終了履歴を残していれば更新前の異常も読める場合があります。自動送信はしません。
+
+[変更内容と確認手順](../docs/STOP_FIX.ja.md)

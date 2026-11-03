@@ -38,6 +38,7 @@ public final class MainActivity extends Activity {
     };
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        CrashDiagnostics.install(this);
         int stored = getSharedPreferences("receiver_settings",MODE_PRIVATE).getInt("frequency_hz",DChannels.DEFAULT_HZ);
         selectedFrequencyHz = DChannels.contains(stored) ? stored : DChannels.DEFAULT_HZ;
         if (saved != null) {
@@ -92,6 +93,9 @@ public final class MainActivity extends Activity {
         driverLink.setOnClickListener(v -> startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://play.google.com/store/apps/details?id="+DRIVER))));
         TextView licenseLink = text(body,"オープンソースライセンス",13,0xff9eafc5,false);
         licenseLink.setOnClickListener(v -> showLicenses());
+        TextView diagnosticsLink = text(body,"停止・クラッシュの診断情報",13,0xff62d7bb,false);
+        diagnosticsLink.setPadding(0,dp(16),0,dp(12));
+        diagnosticsLink.setOnClickListener(v -> showDiagnostics());
         setContentView(scroll);
     }
     @Override protected void onStart() {
@@ -212,6 +216,27 @@ public final class MainActivity extends Activity {
             ScrollView scroll = new ScrollView(this); scroll.addView(view);
             new AlertDialog.Builder(this).setTitle("ライセンス").setView(scroll).setPositiveButton("閉じる",null).show();
         } catch (java.io.IOException e) { launchError = e.getMessage(); render(); }
+    }
+    private void showDiagnostics() {
+        TextView view=new TextView(this); view.setText("診断情報を読み込み中…"); view.setTextSize(12);
+        view.setPadding(dp(20),dp(12),dp(20),dp(12)); view.setTextIsSelectable(true);
+        ScrollView scroll=new ScrollView(this); scroll.addView(view);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("停止・クラッシュの診断")
+            .setView(scroll).setNegativeButton("閉じる",null).setPositiveButton("コピー",(d,which) -> {
+                getSystemService(android.content.ClipboardManager.class).setPrimaryClip(
+                    ClipData.newPlainText("JRDroid 診断",view.getText()));
+                Toast.makeText(this,"診断情報をコピーしました",Toast.LENGTH_SHORT).show();
+            }).show();
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+        Context app=getApplicationContext();
+        new Thread(() -> {
+            String report=CrashDiagnostics.describe(app);
+            runOnUiThread(() -> {
+                if (!isFinishing() && dialog.isShowing()) {
+                    view.setText(report); dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);
+                }
+            });
+        },"JRDroid-diagnostics-read").start();
     }
     private TextView text(LinearLayout box,String value,int sp,int color,boolean bold) {
         TextView t = new TextView(this); t.setText(value); t.setTextSize(sp); t.setTextColor(color); t.setPadding(0,dp(4),0,dp(4));
