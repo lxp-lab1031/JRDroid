@@ -6,6 +6,9 @@ import android.media.*;
 import android.os.*;
 import java.io.*;
 import java.net.*;
+import java.nio.file.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Each run retains its resources until their owning workers have exited. */
 public final class ReceiverService extends Service {
@@ -21,13 +24,29 @@ public final class ReceiverService extends Service {
     private volatile Run current;
     private volatile boolean uiVisible, refreshStats;
     private PowerManager power;
+    private static final ExecutorService IQ_WRITER=new ThreadPoolExecutor(1,1,0,TimeUnit.MILLISECONDS,
+        new ArrayBlockingQueue<>(2),r -> new Thread(r,"JRDroid-IQ-save"));
+    volatile String captureState="";
+    private volatile Run captureOwner;
 
     private static final class Run {
         final ReceiverSession session=new ReceiverSession();
         final int frequency;
+        final AtomicBoolean captureReserved=new AtomicBoolean(), capturePending=new AtomicBoolean();
         Run(int frequency) { this.frequency=frequency; }
     }
     void setUiVisible(boolean visible) { uiVisible=visible; if (visible) refreshStats=true; }
+    boolean captureBusy() { Run run=current; return run!=null && run.captureReserved.get(); }
+    boolean requestIqCapture() {
+        Run run=current;
+        if(run==null || !run.session.isActive() || !run.captureReserved.compareAndSet(false,true)) return false;
+        captureOwner=run; captureState="IQの保存開始を待っています"; run.capturePending.set(true);
+        if(!run.session.isActive()) {
+            run.capturePending.set(false);run.captureReserved.set(false);reportCapture(run,"受信停止のためIQ保存を中止しました");return false;
+        }
+        return true;
+    }
+    private void reportCapture(Run run,String message) { if(captureOwner==run) captureState=message; }
     @Override public void onCreate() {
         super.onCreate();
         CrashDiagnostics.install(this);
@@ -41,11 +60,12 @@ public final class ReceiverService extends Service {
         if (STOP.equals(intent.getAction())) { stopReception(); return START_NOT_STICKY; }
         if (START.equals(intent.getAction()) && current==null) {
             int hz=intent.getIntExtra(FREQUENCY_EXTRA,DChannels.DEFAULT_HZ);
-            if (!DChannels.contains(hz)) {
-                error="受信周波数が D タイプの対応範囲外です。"; state="設定エラー";
+            if (!RadioChannels.contains(hz)) {
+                error="受信周波数が対応設定にありません。"; state="設定エラー";
                 stopSelf(); return START_NOT_STICKY;
             }
             Run run=new Run(hz); current=run; frequencyHz=hz;
+            captureOwner=null; captureState="";
             error=""; stats="{}"; tuner="未接続"; state="ドライバーに接続中";
             try {
                 startForeground(NOTIFICATION,notification());
@@ -64,14 +84,15 @@ public final class ReceiverService extends Service {
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop=PendingIntent.getService(this,1,new Intent(this,ReceiverService.class).setAction(STOP),PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_radio)
-            .setContentTitle("JRDroid · "+DChannels.mhz(frequencyHz)+" MHz")
-            .setContentText(DChannels.label(frequencyHz)+" · タップして状態を表示")
+            .setContentTitle("JRDroid · "+RadioChannels.mhz(frequencyHz)+" MHz")
+            .setContentText(RadioChannels.label(frequencyHz)+" · タップして状態を表示")
             .setContentIntent(open).setOngoing(true)
             .addAction(new Notification.Action.Builder(null,"停止",stop).build()).build();
     }
     private void receive(Run run,int[] commands) {
         NativeReceiver receiver=null;
         PowerManager.WakeLock wake=null;
+        IqCaptureBuffer capture=null;
         try {
             wake=power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"JRDroid:receiver");
             wake.setReferenceCounted(false);
@@ -101,6 +122,12 @@ public final class ReceiverService extends Service {
                     if (discard==n) continue;
                     System.arraycopy(block,discard,block,0,n-discard); n-=discard;
                 }
+                if(run.capturePending.getAndSet(false)) capture=new IqCaptureBuffer(run.frequency);
+                if(capture!=null) {
+                    capture.append(block,n);
+                    reportCapture(run,"IQ取得中: "+capture.size()+" / "+IqCaptureBuffer.LIMIT_BYTES+" byte");
+                    if(capture.complete()) { saveCapture(run,capture); capture=null; }
+                }
                 run.session.offer(receiver.decode(block,n));
                 long now=SystemClock.elapsedRealtime();
                 if (now-lastWake>=5*60*1000L) { wake.acquire(10*60*1000L); lastWake=now; }
@@ -114,6 +141,10 @@ public final class ReceiverService extends Service {
         } catch (Exception | LinkageError e) {
             if (run.session.isActive()) fail(run,"receiver",e);
         } finally {
+            if(capture!=null) saveCapture(run,capture);
+            if(run.capturePending.getAndSet(false)) {
+                run.captureReserved.set(false); reportCapture(run,"受信停止のためIQ保存を中止しました");
+            }
             // No timed join followed by cross-thread AudioTrack.release().
             run.session.awaitStopped();
             if (run.session.closeFailure!=null) CrashDiagnostics.record(this,"socket-close",run.session.closeFailure);
@@ -125,6 +156,28 @@ public final class ReceiverService extends Service {
                 state=error.isEmpty()?"停止中":"受信エラー";
                 current=null; stopSelf();
             });
+        }
+    }
+    private void saveCapture(Run run,IqCaptureBuffer capture) {
+        reportCapture(run,"IQをファイルに保存しています");
+        try { IQ_WRITER.execute(() -> {
+            File temporary=null;
+            try {
+                File target=IqCaptureProvider.latest(this), parent=target.getParentFile();
+                if(!parent.isDirectory() && !parent.mkdirs()) throw new IOException("保存先を作成できません");
+                temporary=File.createTempFile("capture-",".tmp",parent);
+                try(OutputStream out=new FileOutputStream(temporary)) { capture.writeTo(out); }
+                try { Files.move(temporary.toPath(),target.toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING); }
+                catch(AtomicMoveNotSupportedException e) { Files.move(temporary.toPath(),target.toPath(),StandardCopyOption.REPLACE_EXISTING); }
+                reportCapture(run,capture.complete()?"IQ 5秒分を保存しました。共有ボタンで送れます。":"IQを途中まで保存しました: "+capture.size()+" byte（受信停止）");
+            } catch(IOException | RuntimeException e) {
+                reportCapture(run,"IQ保存エラー: "+explain(e));
+            } finally {
+                if(temporary!=null && temporary.exists()) temporary.delete();
+                run.captureReserved.set(false);
+            }
+        }); } catch(RejectedExecutionException e) {
+            run.captureReserved.set(false);reportCapture(run,"保存待ちが多いためIQ取得を中止しました");
         }
     }
     private void playAudio(Run run,AudioAttributes attributes) {

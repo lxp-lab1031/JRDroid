@@ -30,7 +30,7 @@ final class RtlTcp {
         data.writeByte(id); data.writeInt(value); data.flush();
     }
     static void configure(OutputStream out, int[] supported, int frequencyHz) throws IOException {
-        DChannels.require(frequencyHz);
+        RadioChannels.require(frequencyHz);
         int[] required = {1,2,3,4,5,8};
         if (supported != null) for (int id : required) {
             boolean found = false;

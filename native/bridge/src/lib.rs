@@ -10,6 +10,11 @@ pub const RATE: f64 = 240_000.0;
 pub const MIN_FREQUENCY: u32 = 352_537_500;
 pub const MAX_FREQUENCY: u32 = 352_668_750;
 pub const CHANNEL_STEP: u32 = 6_250;
+// User-supplied Windows settings, not verified private-radio protocol support.
+pub const PRIVATE_FREQUENCIES: [u32; 16] = [
+    142493750, 142481250, 142506250, 142518750, 142500000, 142487500, 142512500, 142525000,
+    142550000, 142537500, 142562500, 142575000, 142818750, 142806250, 142831250, 142843750,
+];
 
 pub struct Receiver {
     pipeline: Pipeline,
@@ -24,10 +29,12 @@ impl Receiver {
         Self::at_frequency(FREQUENCY as u32)
     }
     pub fn at_frequency(hz: u32) -> Result<Self, String> {
-        if !(MIN_FREQUENCY..=MAX_FREQUENCY).contains(&hz)
-            || !(hz - MIN_FREQUENCY).is_multiple_of(CHANNEL_STEP)
-        {
-            return Err("Select a D-type channel: 352.53750–352.66875 MHz, 6.25 kHz steps".into());
+        let jr = (MIN_FREQUENCY..=MAX_FREQUENCY).contains(&hz)
+            && (hz - MIN_FREQUENCY).is_multiple_of(CHANNEL_STEP);
+        if !jr && !PRIVATE_FREQUENCIES.contains(&hz) {
+            return Err(
+                "Select a JR D-type channel or one of the 16 experimental 142 MHz presets".into(),
+            );
         }
         let frequency = f64::from(hz);
         Ok(Self {
@@ -109,6 +116,7 @@ impl Receiver {
         }
         let s = &self.pipeline.status;
         serde_json::json!({
+            "experimental_private": PRIVATE_FREQUENCIES.contains(&(self.pipeline.config.frequency_hz as u32)),
             "frequency_hz": self.pipeline.config.frequency_hz as u32,
             "format": self.pipeline.config.format,
             "iq_samples": s.iq_samples, "frames": s.frames,
@@ -255,6 +263,20 @@ mod tests {
                     Format::Slotted
                 }
             );
+        }
+    }
+    #[test]
+    fn experimental_presets_are_explicit_and_not_reported_as_verified_protocols() {
+        for hz in PRIVATE_FREQUENCIES {
+            let mut r = Receiver::at_frequency(hz).unwrap();
+            let status: serde_json::Value =
+                serde_json::from_str(&r.status_with_diagnostics(false)).unwrap();
+            assert_eq!(status["frequency_hz"], hz);
+            assert_eq!(status["experimental_private"], true);
+            assert_eq!(r.pipeline.config.format, Format::Slotted);
+        }
+        for hz in [142000000, 142493751, 142600000, 142843751] {
+            assert!(Receiver::at_frequency(hz).is_err());
         }
     }
     #[test]

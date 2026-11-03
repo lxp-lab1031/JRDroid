@@ -22,11 +22,12 @@ public final class MainActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private ReceiverService service;
     private boolean bound, launching;
+    private boolean visible, sharing;
     private int selectedFrequencyHz = DChannels.DEFAULT_HZ;
     private int launchingFrequencyHz = DChannels.DEFAULT_HZ;
     private String launchError = "";
-    private TextView stateView, usbView, detailView, errorView, countersView, frequencyView, channelView;
-    private Button start, stop, channelButton, lowerFrequency, higherFrequency;
+    private TextView stateView, usbView, detailView, errorView, countersView, frequencyView, channelView, profileNotice, captureInfo;
+    private Button start, stop, channelButton, lowerFrequency, higherFrequency, captureButton, shareCapture;
     private final ServiceConnection connection = new ServiceConnection() {
         public void onServiceConnected(ComponentName name, IBinder binder) {
             service = ((ReceiverService.LocalBinder)binder).service(); service.setUiVisible(true); render();
@@ -40,11 +41,11 @@ public final class MainActivity extends Activity {
         super.onCreate(saved);
         CrashDiagnostics.install(this);
         int stored = getSharedPreferences("receiver_settings",MODE_PRIVATE).getInt("frequency_hz",DChannels.DEFAULT_HZ);
-        selectedFrequencyHz = DChannels.contains(stored) ? stored : DChannels.DEFAULT_HZ;
+        selectedFrequencyHz = RadioChannels.contains(stored) ? stored : DChannels.DEFAULT_HZ;
         if (saved != null) {
             launching = saved.getBoolean("launching");
             int pending = saved.getInt("launching_frequency_hz",selectedFrequencyHz);
-            launchingFrequencyHz = DChannels.contains(pending) ? pending : selectedFrequencyHz;
+            launchingFrequencyHz = RadioChannels.contains(pending) ? pending : selectedFrequencyHz;
         }
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
         LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL);
@@ -62,16 +63,17 @@ public final class MainActivity extends Activity {
         text(body,"JR 在来線デジタル列車無線",14,0xff9eafc5,false);
         space(body,24);
         channelView = text(body,"",14,0xff62d7bb,true);
-        frequencyView = text(body,DChannels.mhz(selectedFrequencyHz),42,0xffedf5ff,true);
+        profileNotice = text(body,"142 MHz帯は試験受信です。京急等の音声復号は未確認です。",13,0xffffd596,false);
+        frequencyView = text(body,RadioChannels.mhz(selectedFrequencyHz),42,0xffedf5ff,true);
         text(body,"MHz   /   RTL2832U・R820T",14,0xff9eafc5,false);
-        channelButton = button(body,"周波数・D チャンネルを選択",false);
+        channelButton = button(body,"受信対象・周波数を選択",false);
         channelButton.setOnClickListener(v -> chooseChannel());
         LinearLayout steps = new LinearLayout(this); body.addView(steps);
         lowerFrequency = stepButton(steps,"−6.25 kHz");
         higherFrequency = stepButton(steps,"＋6.25 kHz");
-        lowerFrequency.setOnClickListener(v -> selectFrequency(selectedFrequencyHz-DChannels.STEP_HZ));
-        higherFrequency.setOnClickListener(v -> selectFrequency(selectedFrequencyHz+DChannels.STEP_HZ));
-        text(body,"停止中に選局 → 受信開始。D1〜D7 は JR東日本の標準割当です（路線による例外あり）。",12,0xff9eafc5,false);
+        lowerFrequency.setOnClickListener(v -> selectFrequency(RadioChannels.neighbor(selectedFrequencyHz,-1)));
+        higherFrequency.setOnClickListener(v -> selectFrequency(RadioChannels.neighbor(selectedFrequencyHz,1)));
+        text(body,"停止中に選局 → 受信開始。JR Dタイプは標準割当、142 MHz帯は提供画像の設定です。",12,0xff9eafc5,false);
         space(body,12);
         LinearLayout statusCard = card(body);
         text(statusCard,"受信状態",12,0xff9eafc5,false);
@@ -83,12 +85,20 @@ public final class MainActivity extends Activity {
         start = button(body,"受信開始",true); start.setOnClickListener(v -> launchDriver());
         stop = button(body,"停止",false); stop.setOnClickListener(v -> { if (service != null) service.stopReception(); });
         errorView = text(body,"",14,0xffffb5a9,false); errorView.setTextIsSelectable(true);
+        captureButton = button(body,"調査用 IQ を5秒取得",false);
+        captureButton.setOnClickListener(v -> {
+            if(service!=null && service.requestIqCapture()) render();
+            else Toast.makeText(this,"受信中に開始してください。保存中は次の取得を開始できません。",Toast.LENGTH_LONG).show();
+        });
+        shareCapture = button(body,"保存した IQ を共有",false);
+        shareCapture.setOnClickListener(v -> shareIqCapture());
+        captureInfo = text(body,"",12,0xff9eafc5,false);
         space(body,18);
         text(body,"240 kS/s  ·  RF 40.2 dB  ·  補正 0 ppm",13,0xff9eafc5,false);
         text(body,"スマホ内で復調・音声合成・再生\nPC・外部サーバー・受信中のインターネットは不要",13,0xff9eafc5,false);
         text(body,"他アプリの音声とミックス再生します。音量・出力先はスマホのメディア設定に従います。",13,0xff9eafc5,false);
         space(body,16);
-        text(body,"旅客一斉の音声受信は実機確認済みです。他チャンネルの受信は実機評価が必要です。データ電文の表示は未対応です。",13,0xffffd596,false);
+        text(body,"JRのD4第1波・旅客一斉、TikTokミックス・Bluetooth出力は実機報告があります。142 MHz帯の音声復号は未確認です。",13,0xffffd596,false);
         TextView driverLink = text(body,"ドライバーの導入案内を開く ↗",13,0xff62d7bb,false);
         driverLink.setPadding(0,dp(20),0,dp(8));
         driverLink.setOnClickListener(v -> startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://play.google.com/store/apps/details?id="+DRIVER))));
@@ -101,10 +111,12 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onStart() {
         super.onStart();
+        visible=true;
         bound = bindService(new Intent(this,ReceiverService.class),connection,BIND_AUTO_CREATE);
         handler.post(poll);
     }
     @Override protected void onStop() {
+        visible=false;
         handler.removeCallbacks(poll);
         if (service != null) service.setUiVisible(false);
         if (bound) { unbindService(connection); bound = false; service = null; }
@@ -117,7 +129,7 @@ public final class MainActivity extends Activity {
     }
     private boolean tuningLocked() { return launching || service == null || service.busy(); }
     private void selectFrequency(int hz) {
-        if (tuningLocked() || !DChannels.contains(hz)) return;
+        if (tuningLocked() || !RadioChannels.contains(hz)) return;
         selectedFrequencyHz = hz;
         getSharedPreferences("receiver_settings",MODE_PRIVATE).edit().putInt("frequency_hz",hz).apply();
         launchError = "";
@@ -125,11 +137,18 @@ public final class MainActivity extends Activity {
     }
     private void chooseChannel() {
         if (tuningLocked()) return;
-        String[] options = new String[DChannels.count()];
-        for (int i=0;i<options.length;i++) options[i] = DChannels.option(DChannels.at(i));
-        new AlertDialog.Builder(this).setTitle("D タイプ · 352 MHz 帯")
-            .setSingleChoiceItems(options,DChannels.index(selectedFrequencyHz),(dialog,which) -> {
-                selectFrequency(DChannels.at(which)); dialog.dismiss();
+        new AlertDialog.Builder(this).setTitle("受信対象")
+            .setItems(new String[]{"JR Dタイプ · 352 MHz帯","142 MHz帯 · 私鉄設定の試験受信"},(dialog,which) -> chooseChannelGroup(which==1))
+            .setNegativeButton("閉じる",null).show();
+    }
+    private void chooseChannelGroup(boolean experimental) {
+        if(tuningLocked()) return;
+        String[] options = new String[RadioChannels.count(experimental)];
+        for (int i=0;i<options.length;i++) options[i] = RadioChannels.option(RadioChannels.at(experimental,i));
+        int checked=RadioChannels.isExperimental(selectedFrequencyHz)==experimental?RadioChannels.index(selectedFrequencyHz):-1;
+        new AlertDialog.Builder(this).setTitle(experimental?"画像の142 MHz設定（復号未確認）":"JR Dタイプ · 352 MHz帯")
+            .setSingleChoiceItems(options,checked,(dialog,which) -> {
+                selectFrequency(RadioChannels.at(experimental,which)); dialog.dismiss();
             })
             .setNeutralButton("MHz を直接入力",(dialog,which) -> enterFrequency())
             .setNegativeButton("閉じる",null).show();
@@ -137,15 +156,15 @@ public final class MainActivity extends Activity {
     private void enterFrequency() {
         if (tuningLocked()) return;
         EditText input = new EditText(this);
-        input.setSingleLine(true); input.setText(DChannels.mhz(selectedFrequencyHz)); input.selectAll();
+        input.setSingleLine(true); input.setText(RadioChannels.mhz(selectedFrequencyHz)); input.selectAll();
         input.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         input.setPadding(dp(24),dp(12),dp(24),dp(12));
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle("受信周波数 (MHz)")
-            .setMessage("352.53750〜352.66875 MHz\n6.25 kHz 刻み。例: D1 第1波は 352.55625")
+            .setMessage("JRの22波、または画像の142 MHz帯16波を指定してください。例: 142.48125 / 352.56250")
             .setView(input).setPositiveButton("設定",null).setNegativeButton("キャンセル",null).create();
         dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button -> {
             try {
-                int hz = DChannels.parseMhz(input.getText().toString());
+                int hz = RadioChannels.parseMhz(input.getText().toString());
                 if (tuningLocked()) { input.setError("受信を停止してから変更してください。"); return; }
                 selectFrequency(hz); dialog.dismiss();
             } catch (IllegalArgumentException e) { input.setError(e.getMessage()); }
@@ -187,12 +206,20 @@ public final class MainActivity extends Activity {
         ReceiverService s = service;
         boolean busy = s != null && s.busy();
         int shownFrequency = busy ? s.frequencyHz : launching ? launchingFrequencyHz : selectedFrequencyHz;
-        frequencyView.setText(DChannels.mhz(shownFrequency));
-        channelView.setText(DChannels.label(shownFrequency)+" · 1 波受信");
+        boolean experimental=RadioChannels.isExperimental(shownFrequency);
+        frequencyView.setText(RadioChannels.mhz(shownFrequency));
+        channelView.setText(RadioChannels.label(shownFrequency)+" · 1 波受信");
+        profileNotice.setVisibility(experimental?View.VISIBLE:View.GONE);
         boolean selectable = !tuningLocked();
         channelButton.setEnabled(selectable);
-        lowerFrequency.setEnabled(selectable && selectedFrequencyHz>DChannels.MIN_HZ);
-        higherFrequency.setEnabled(selectable && selectedFrequencyHz<DChannels.MAX_HZ);
+        lowerFrequency.setText(experimental?"前の設定":"−6.25 kHz");
+        higherFrequency.setText(experimental?"次の設定":"＋6.25 kHz");
+        lowerFrequency.setEnabled(selectable && RadioChannels.neighbor(selectedFrequencyHz,-1)!=selectedFrequencyHz);
+        higherFrequency.setEnabled(selectable && RadioChannels.neighbor(selectedFrequencyHz,1)!=selectedFrequencyHz);
+        boolean capturing=s!=null && s.captureBusy();
+        captureButton.setEnabled(busy && !capturing);
+        shareCapture.setEnabled(IqCaptureProvider.latest(this).isFile() && !capturing && !sharing);
+        captureInfo.setText(s==null?"":s.captureState);
         stateView.setText(launching ? "ドライバーで USB 許可を確認中" : s == null ? "停止中" : s.state);
         start.setEnabled(selectable); stop.setEnabled(busy);
         UsbManager usb = getSystemService(UsbManager.class);
@@ -206,6 +233,31 @@ public final class MainActivity extends Activity {
             String evm = j.isNull("evm_percent") ? "未計測" : String.format(Locale.JAPAN,"%.1f %%",j.optDouble("evm_percent",0));
             detailView.setText(String.format(Locale.JAPAN,"IQ: %,d samples\n入力: %.1f dBFS  /  EVM: %s\n周波数ずれ: %+.1f Hz",j.optLong("iq_samples"),j.optDouble("input_dbfs",-120),evm,j.optDouble("frequency_error_hz",0)));
         } catch (org.json.JSONException e) { detailView.setText("受信統計を読み取れません"); }
+    }
+    private void shareIqCapture() {
+        if(sharing || !IqCaptureProvider.latest(this).isFile()) return;
+        sharing=true; render();
+        Context app=getApplicationContext();
+        new Thread(() -> {
+            try {
+                Uri uri=IqCaptureProvider.prepareShare(app);
+                runOnUiThread(() -> {
+                    sharing=false;
+                    if(!visible || isFinishing() || isDestroyed()) return;
+                    render();
+                    Intent send=new Intent(Intent.ACTION_SEND).setType("application/octet-stream")
+                        .putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    send.setClipData(ClipData.newUri(getContentResolver(),"JRDroid IQ",uri));
+                    try { startActivity(Intent.createChooser(send,"調査用IQを共有")); }
+                    catch(ActivityNotFoundException e) { Toast.makeText(this,"共有できるアプリが見つかりません",Toast.LENGTH_LONG).show(); }
+                });
+            } catch(java.io.IOException | RuntimeException e) {
+                runOnUiThread(() -> {
+                    sharing=false;
+                    if(visible && !isFinishing()) { render();Toast.makeText(this,"IQの共有準備に失敗しました",Toast.LENGTH_LONG).show(); }
+                });
+            }
+        },"JRDroid-IQ-share").start();
     }
     private void showLicenses() {
         try (java.io.InputStream in = getAssets().open("THIRD_PARTY_NOTICES.txt")) {

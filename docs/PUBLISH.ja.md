@@ -2,6 +2,10 @@
 
 公開先: https://github.com/lxp-lab1031/JRDroid
 
+## v0.3.0-alpha: 142 MHz帯の試験受信版
+
+画像のK1/K2/K3/北総16設定を追加し、5秒相当の未復調IQ保存・共有に対応しました。**京急の専用方式・音声復号は未確認**です。生成物は `JRDroid-0.3.0-alpha-debug.apk` / `JRDroid-0.3.0-alpha-standalone.apk` / `JRDroid-0.3.0-alpha-source.zip` です。詳細は [試験手順](PRIVATE_142_TEST.ja.md) を参照してください。取得した `.jrd-iq` は公開用ソースに含めません。
+
 ## v0.2.3-alpha: 他アプリとの音声ミックス
 
 2026-11-03 に音声フォーカスの要求をやめ、Androidのメディア出力に従うミックス再生構成へ変更しました。停止修正版の終了処理を継承しています。生成物は `JRDroid-0.2.3-alpha-debug.apk` / `JRDroid-0.2.3-alpha-standalone.apk` / `JRDroid-0.2.3-alpha-source.zip` です。相手アプリとの実機併用は未確認です。[操作手順](AUDIO_MIX.ja.md) を参照してください。

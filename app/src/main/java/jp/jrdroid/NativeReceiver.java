@@ -6,7 +6,7 @@ final class NativeReceiver implements AutoCloseable {
     private long handle;
     private static final short[] EMPTY_PCM = new short[0];
     NativeReceiver() { this(DChannels.DEFAULT_HZ); }
-    NativeReceiver(int frequencyHz) { handle = create(DChannels.require(frequencyHz)); }
+    NativeReceiver(int frequencyHz) { handle = create(RadioChannels.require(frequencyHz)); }
     short[] decode(byte[] iq, int count) {
         short[] pcm = process(handle, iq, count);
         return pcm == null ? EMPTY_PCM : pcm;
