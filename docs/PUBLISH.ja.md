@@ -2,6 +2,10 @@
 
 公開先: https://github.com/lxp-lab1031/JRDroid
 
+## v0.2.3-alpha: 他アプリとの音声ミックス
+
+2026-11-03 に音声フォーカスの要求をやめ、Androidのメディア出力に従うミックス再生構成へ変更しました。停止修正版の終了処理を継承しています。生成物は `JRDroid-0.2.3-alpha-debug.apk` / `JRDroid-0.2.3-alpha-standalone.apk` / `JRDroid-0.2.3-alpha-source.zip` です。相手アプリとの実機併用は未確認です。[操作手順](AUDIO_MIX.ja.md) を参照してください。
+
 ## v0.2.2-alpha: 停止処理の修正版
 
 2026-11-03 に、停止時の終了処理と音声出力の所有スレッドを修正し、クラッシュ診断画面を追加しました。生成物は `JRDroid-0.2.2-alpha-debug.apk` / `JRDroid-0.2.2-alpha-standalone.apk` / `JRDroid-0.2.2-alpha-source.zip` です。ホスト回帰試験とAPKビルドは成功し、実機での解消は未確認です。[停止処理の修正](STOP_FIX.ja.md) を参照してください。

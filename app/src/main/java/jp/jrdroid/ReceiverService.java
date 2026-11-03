@@ -20,7 +20,6 @@ public final class ReceiverService extends Service {
     volatile int frequencyHz=DChannels.DEFAULT_HZ;
     private volatile Run current;
     private volatile boolean uiVisible, refreshStats;
-    private AudioManager audioManager;
     private PowerManager power;
 
     private static final class Run {
@@ -34,7 +33,6 @@ public final class ReceiverService extends Service {
         CrashDiagnostics.install(this);
         getSystemService(NotificationManager.class).createNotificationChannel(
             new NotificationChannel(CHANNEL,"列車無線の受信",NotificationManager.IMPORTANCE_LOW));
-        audioManager=getSystemService(AudioManager.class);
         power=getSystemService(PowerManager.class);
     }
     @Override public IBinder onBind(Intent intent) { return binder; }
@@ -74,22 +72,14 @@ public final class ReceiverService extends Service {
     private void receive(Run run,int[] commands) {
         NativeReceiver receiver=null;
         PowerManager.WakeLock wake=null;
-        AudioFocusRequest focus=null;
         try {
             wake=power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"JRDroid:receiver");
             wake.setReferenceCounted(false);
             wake.acquire(10*60*1000L); long lastWake=SystemClock.elapsedRealtime();
             AudioAttributes attributes=new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build();
-            focus=new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(attributes)
-                .setOnAudioFocusChangeListener(change -> {
-                    if (change<0 && current==run && run.session.isActive()) {
-                        error="音声フォーカスを失いました。受信開始で再開してください。";
-                        stop(run);
-                    }
-                },main).build();
-            if (audioManager.requestAudioFocus(focus)!=AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
-                throw new IOException("音声出力を使用できません。他の音声アプリを停止してください。");
+            // Coexist with other media players: do not request or abandon audio focus.
+            // Android mixes this AudioTrack into the user's current media output route.
             run.session.startAudio(() -> playAudio(run,attributes));
             Socket socket=new Socket();
             if (!run.session.attach(socket)) throw new InterruptedIOException("停止しました");
@@ -128,7 +118,6 @@ public final class ReceiverService extends Service {
             run.session.awaitStopped();
             if (run.session.closeFailure!=null) CrashDiagnostics.record(this,"socket-close",run.session.closeFailure);
             if (receiver!=null) { NativeReceiver owned=receiver; cleanup(run,"native-close",owned::close); }
-            if (focus!=null) { AudioFocusRequest owned=focus; cleanup(run,"focus-release",() -> audioManager.abandonAudioFocusRequest(owned)); }
             if (wake!=null) { PowerManager.WakeLock owned=wake; cleanup(run,"wake-release",() -> { if (owned.isHeld()) owned.release(); }); }
             main.post(() -> {
                 if (current!=run) return;
@@ -151,8 +140,8 @@ public final class ReceiverService extends Service {
             .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(buffer).build();
         try {
             if (output.getState()!=AudioTrack.STATE_INITIALIZED) throw new IOException("AudioTrack の初期化に失敗しました");
-            for (AudioDeviceInfo device:audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS))
-                if (device.getType()==AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) { output.setPreferredDevice(device); break; }
+            // Follow Android's media route (speaker/headphones/Bluetooth); do not
+            // force our track to a different device than the other playing app.
         } catch (IOException | RuntimeException e) { cleanup(run,"audio-init-release",output::release); throw e; }
         return new PcmPlayback.Output() {
             public void play() { output.play(); }

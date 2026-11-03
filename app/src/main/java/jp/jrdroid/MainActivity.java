@@ -86,6 +86,7 @@ public final class MainActivity extends Activity {
         space(body,18);
         text(body,"240 kS/s  ·  RF 40.2 dB  ·  補正 0 ppm",13,0xff9eafc5,false);
         text(body,"スマホ内で復調・音声合成・再生\nPC・外部サーバー・受信中のインターネットは不要",13,0xff9eafc5,false);
+        text(body,"他アプリの音声とミックス再生します。音量・出力先はスマホのメディア設定に従います。",13,0xff9eafc5,false);
         space(body,16);
         text(body,"旅客一斉の音声受信は実機確認済みです。他チャンネルの受信は実機評価が必要です。データ電文の表示は未対応です。",13,0xffffd596,false);
         TextView driverLink = text(body,"ドライバーの導入案内を開く ↗",13,0xff62d7bb,false);
