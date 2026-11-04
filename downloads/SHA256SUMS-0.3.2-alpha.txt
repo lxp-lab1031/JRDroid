@@ -1,3 +1,3 @@
-e2fc8b4ab38f8930c8a766e531196d9d67c1923b662e37884eb40a20d7dc39fc  JRDroid-0.3.2-alpha-debug.apk
-f8f96384796aa76d84c8c944a2b7bebee6475309bc16c0e582207bdcd7a2acc9  JRDroid-0.3.2-alpha-standalone.apk
-789edc3e2aa3d6a5cfdd788ff785d1f5abcad6e8007ba52166d402b09bb243fe  JRDroid-0.3.2-alpha-source.zip
+36db67f3ce97af7edae0227774c557dc248b843c708c2fef6b764a1ac40c5a03  JRDroid-0.3.2-alpha-debug.apk
+b0b6ff6570814a3cfeab71f53dbdd2628aeaac59584a55aaf3b12643572ba5de  JRDroid-0.3.2-alpha-standalone.apk
+f2895fe25119b819db1a359a999e901ae14a20b2da5f90b109d3f9aa00f321f0  JRDroid-0.3.2-alpha-source.zip

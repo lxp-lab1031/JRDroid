@@ -5,6 +5,7 @@ import android.content.*;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import java.io.*;
 import java.text.SimpleDateFormat;
@@ -72,7 +73,9 @@ final class IqDownloads {
         DocumentTarget(ContentResolver resolver,Uri uri) { this.resolver=resolver;this.uri=uri; }
         public OutputStream open() throws IOException { return resolver.openOutputStream(uri,"w"); }
         public void publish() {}
-        public void abort() { resolver.delete(uri,null,null); }
+        public void abort() throws IOException {
+            if(!DocumentsContract.deleteDocument(resolver,uri)) throw new IOException("未完成の保存ファイルを削除できません");
+        }
     }
     private IqDownloads() {}
 }
