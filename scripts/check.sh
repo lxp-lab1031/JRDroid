@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 cargo test --manifest-path native/Cargo.toml --locked --release -p jrdroid -p jr_conventional_dsp -p jr_conventional_voice -p receiver-core --no-default-features -j 3
 mkdir -p app/build/host-tests
-javac -encoding UTF-8 -d app/build/host-tests app/src/main/java/jp/jrdroid/{DChannels,RadioChannels,RtlTcp,NativeReceiver,IqBlockReader,IqCaptureBuffer,IqCaptureFiles,PcmPlayback,ReceiverSession,AudioPump}.java tests/java/jp/jrdroid/*.java
+javac -encoding UTF-8 -d app/build/host-tests app/src/main/java/jp/jrdroid/{DChannels,RadioChannels,RtlTcp,NativeReceiver,IqBlockReader,IqCaptureBuffer,IqCaptureFiles,IqCaptureExport,PcmPlayback,ReceiverSession,AudioPump}.java tests/java/jp/jrdroid/*.java
 java -cp app/build/host-tests jp.jrdroid.DChannelsTest
 python3 - <<'PY'
 import json,subprocess
@@ -24,3 +24,5 @@ java -Djava.library.path=native/target/release -cp app/build/host-tests jp.jrdro
 java -cp app/build/host-tests jp.jrdroid.SessionLifecycleTest
 java -Djava.library.path=native/target/release -cp app/build/host-tests jp.jrdroid.PrivateBaseStationTest app/build/host-tests/synthetic.u8 app/build/host-tests/private-synthetic.jrd-iq
 python3 scripts/inspect-capture.py app/build/host-tests/private-synthetic.jrd-iq
+java -cp app/build/host-tests jp.jrdroid.IqExportTest app/build/host-tests/private-synthetic.jrd-iq app/build/host-tests/private-synthetic.zip
+python3 scripts/inspect-capture.py app/build/host-tests/private-synthetic.zip

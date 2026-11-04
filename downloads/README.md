@@ -1,23 +1,24 @@
-# v0.3.1-alpha — 146 MHz帯の基地局設定
+# v0.3.2-alpha — IQをダウンロードへZIP保存
 
-142 MHz帯の移動局16波を削除し、提供写真の146 MHz帯基地局16波へ置き換えました。K1/K2/K3/北総について、音声・データ・基地局を一覧に表示します。**京急等の音声復号は引き続き未確認の試験版です。**
+ChatGPTからCodexへの切り替えで添付が消える場合に、IQをスマホへ保存してから添付できる版です。新しい「IQ をダウンロードに保存（ZIP）」で、Galaxyの「ダウンロード/JRDroid」へ保存します。
 
-通常版: [APK](https://github.com/lxp-lab1031/JRDroid/raw/refs/heads/base-station-146mhz/downloads/JRDroid-0.3.1-alpha-debug.apk)
+通常版: [APK](https://github.com/lxp-lab1031/JRDroid/raw/refs/heads/iq-download-export/downloads/JRDroid-0.3.2-alpha-debug.apk)
 
-別インストール版: [APK](https://github.com/lxp-lab1031/JRDroid/raw/refs/heads/base-station-146mhz/downloads/JRDroid-0.3.1-alpha-standalone.apk)
+別インストール版: [APK](https://github.com/lxp-lab1031/JRDroid/raw/refs/heads/iq-download-export/downloads/JRDroid-0.3.2-alpha-standalone.apk)
 
-ソース一式: [ZIP](https://github.com/lxp-lab1031/JRDroid/raw/refs/heads/base-station-146mhz/downloads/JRDroid-0.3.1-alpha-source.zip)
+ソース一式: [ZIP](https://github.com/lxp-lab1031/JRDroid/raw/refs/heads/iq-download-export/downloads/JRDroid-0.3.2-alpha-source.zip)
 
-チェックサム: [SHA-256](SHA256SUMS-0.3.1-alpha.txt)
+チェックサム: [SHA-256](SHA256SUMS-0.3.2-alpha.txt)
 
-現在と同じ種類の旧版へ更新してください。署名・アプリIDを維持し、versionCodeは7です。旧移動局設定を保存していた場合、同じチャンネルの基地局側へ自動的に引き継ぎます。JR設定・音声ミックス・停止修正・省電力処理・IQ保存は継続しています。
+現在と同じ種類の旧版へ更新してください。署名・アプリIDは維持し、versionCodeは8です。受信・音声復号のバイナリはv0.3.1-alphaと同一です。146 MHz帯基地局16波・JR22波・音声ミックス・停止修正・省電力処理・IQ取得と共有を継続しています。
 
-停止 → 「受信対象・周波数を選択」 → 「京急・京成・北総 基地局 · 146 MHz帯（試験）」 → 音声波を選択 → 受信開始。
+1. 「調査用 IQ を5秒取得」で取得完了を待ちます。
+2. 「IQ をダウンロードに保存（ZIP）」を押し、「保存しました」の表示を待ちます。
+3. ChatGPTで**先にCodexへ切り替えます**。
+4. 添付のファイル選択から「ダウンロード」→「JRDroid」のZIPを選びます。
 
-例: **K1-1 音声 基地局は146.48125 MHz**です。K1データの146.49375 MHzとは別の波です。写真の146.470000 MHzは広帯域受信の中心で、本アプリは選択した1波へ合わせます。
+保存したZIPは元の一時IQと独立して残り、添付前に解凍する必要はありません。既存の「保存した IQ を共有」も利用できます。Android9では保存先選択画面からダウンロード等を選びます。
 
-同期しない・音声が出ない場合は、発話中に「調査用 IQ を5秒取得」を押し、完了後「保存した IQ を共有」から取得データを送れます。自動送信はしません。
+[保存・添付の詳しい手順](../docs/IQ_EXPORT.ja.md) / [基地局の選局](../docs/PRIVATE_BASE_STATION_TEST.ja.md) / [検証記録](../docs/VALIDATION.ja.md)
 
-[基地局16波の一覧と手順](../docs/PRIVATE_BASE_STATION_TEST.ja.md) / [検証記録](../docs/VALIDATION.ja.md)
-
-過去の配布物は版を明示して保持しています。v0.3.0-alphaの142 MHz帯は移動局側の旧設定です。
+ビルドとホスト試験は成功。Galaxyでの保存・Codexへの添付操作は実機確認が必要です。京急の実電波による音声復号も未確認です。過去の配布物は各バージョン名で保持しています。

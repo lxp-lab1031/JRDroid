@@ -16,3 +16,4 @@ app/src/main/jniLibs/
 .env.*
 !.env.example
 *.jrd-iq
+JRDroid-IQ-*.zip

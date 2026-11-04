@@ -3,11 +3,21 @@
 import argparse
 import json
 import pathlib
+import zipfile
+from contextlib import ExitStack
 
 parser=argparse.ArgumentParser()
 parser.add_argument('capture',type=pathlib.Path)
 args=parser.parse_args()
-with args.capture.open('rb') as f:
+with ExitStack() as stack:
+    if zipfile.is_zipfile(args.capture):
+        archive=stack.enter_context(zipfile.ZipFile(args.capture))
+        entries=archive.infolist()
+        if len(entries)!=1 or entries[0].filename!='capture.jrd-iq' or entries[0].file_size>2404096:
+            raise SystemExit('Expected one bounded capture.jrd-iq in the ZIP')
+        f=stack.enter_context(archive.open(entries[0]))
+    else:
+        f=stack.enter_context(args.capture.open('rb'))
     line=f.readline(4097)
     if len(line)>4096 or not line.endswith(b'\n'): raise SystemExit('Invalid or oversized capture header')
     meta=json.loads(line)

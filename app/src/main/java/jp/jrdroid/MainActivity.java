@@ -18,16 +18,17 @@ import org.json.JSONObject;
 
 public final class MainActivity extends Activity {
     private static final int DRIVER_REQUEST = 7;
+    private static final int SAVE_IQ_REQUEST = 8;
     private static final String DRIVER = "marto.rtl_tcp_andro";
     private final Handler handler = new Handler(Looper.getMainLooper());
     private ReceiverService service;
     private boolean bound, launching;
-    private boolean visible, sharing;
+    private boolean visible, sharing, choosingSaveTarget;
     private int selectedFrequencyHz = DChannels.DEFAULT_HZ;
     private int launchingFrequencyHz = DChannels.DEFAULT_HZ;
     private String launchError = "";
-    private TextView stateView, usbView, detailView, errorView, countersView, frequencyView, channelView, profileNotice, captureInfo;
-    private Button start, stop, channelButton, lowerFrequency, higherFrequency, captureButton, shareCapture;
+    private TextView stateView, usbView, detailView, errorView, countersView, frequencyView, channelView, profileNotice, captureInfo, exportInfo;
+    private Button start, stop, channelButton, lowerFrequency, higherFrequency, captureButton, shareCapture, saveCapture;
     private final ServiceConnection connection = new ServiceConnection() {
         public void onServiceConnected(ComponentName name, IBinder binder) {
             service = ((ReceiverService.LocalBinder)binder).service(); service.setUiVisible(true); render();
@@ -46,6 +47,7 @@ public final class MainActivity extends Activity {
             getSharedPreferences("receiver_settings",MODE_PRIVATE).edit().putInt("frequency_hz",selectedFrequencyHz).apply();
         if (saved != null) {
             launching = saved.getBoolean("launching");
+            choosingSaveTarget = saved.getBoolean("choosing_iq_save_target");
             int pending = saved.getInt("launching_frequency_hz",selectedFrequencyHz);
             launchingFrequencyHz = RadioChannels.contains(pending) ? pending : selectedFrequencyHz;
         }
@@ -95,6 +97,12 @@ public final class MainActivity extends Activity {
         shareCapture = button(body,"保存した IQ を共有",false);
         shareCapture.setOnClickListener(v -> shareIqCapture());
         captureInfo = text(body,"",12,0xff9eafc5,false);
+        saveCapture = button(body,"IQ をダウンロードに保存（ZIP）",false);
+        saveCapture.setOnClickListener(v -> saveIqCapture());
+        exportInfo = text(body,"",12,0xff9eafc5,false); exportInfo.setTextIsSelectable(true);
+        text(body,Build.VERSION.SDK_INT>=29?
+            "保存したZIPは「ダウンロード → JRDroid」にあります。Codexへ切り替えてから、ファイルを追加して添付できます。":
+            "保存先にダウンロードを選んでください。Codexへ切り替えてから、ファイルを追加して保存したZIPを添付できます。",12,0xff9eafc5,false);
         space(body,18);
         text(body,"240 kS/s  ·  RF 40.2 dB  ·  補正 0 ppm",13,0xff9eafc5,false);
         text(body,"スマホ内で復調・音声合成・再生\nPC・外部サーバー・受信中のインターネットは不要",13,0xff9eafc5,false);
@@ -126,6 +134,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onSaveInstanceState(Bundle out) {
         out.putBoolean("launching",launching);
+        out.putBoolean("choosing_iq_save_target",choosingSaveTarget);
         out.putInt("launching_frequency_hz",launchingFrequencyHz);
         super.onSaveInstanceState(out);
     }
@@ -189,6 +198,14 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request,result,data);
+        if(request==SAVE_IQ_REQUEST) {
+            choosingSaveTarget=false;
+            if(result==RESULT_OK && data!=null && data.getData()!=null) {
+                if(!IqDownloads.save(this,data.getData()))
+                    Toast.makeText(this,"別のIQを保存中です。完了後にもう一度試してください。",Toast.LENGTH_LONG).show();
+            }
+            render();return;
+        }
         if (request != DRIVER_REQUEST) return;
         launching = false;
         if (result == RESULT_OK) {
@@ -219,9 +236,11 @@ public final class MainActivity extends Activity {
         lowerFrequency.setEnabled(selectable && RadioChannels.neighbor(selectedFrequencyHz,-1)!=selectedFrequencyHz);
         higherFrequency.setEnabled(selectable && RadioChannels.neighbor(selectedFrequencyHz,1)!=selectedFrequencyHz);
         boolean capturing=s!=null && s.captureBusy();
-        captureButton.setEnabled(busy && !capturing);
+        captureButton.setEnabled(busy && !capturing && !choosingSaveTarget);
         shareCapture.setEnabled(IqCaptureProvider.latest(this).isFile() && !capturing && !sharing);
         captureInfo.setText(s==null?"":s.captureState);
+        saveCapture.setEnabled(IqCaptureProvider.latest(this).isFile() && !capturing && !choosingSaveTarget && !IqDownloads.isBusy());
+        exportInfo.setText(IqDownloads.status());
         stateView.setText(launching ? "ドライバーで USB 許可を確認中" : s == null ? "停止中" : s.state);
         start.setEnabled(selectable); stop.setEnabled(busy);
         UsbManager usb = getSystemService(UsbManager.class);
@@ -235,6 +254,22 @@ public final class MainActivity extends Activity {
             String evm = j.isNull("evm_percent") ? "未計測" : String.format(Locale.JAPAN,"%.1f %%",j.optDouble("evm_percent",0));
             detailView.setText(String.format(Locale.JAPAN,"IQ: %,d samples\n入力: %.1f dBFS  /  EVM: %s\n周波数ずれ: %+.1f Hz",j.optLong("iq_samples"),j.optDouble("input_dbfs",-120),evm,j.optDouble("frequency_error_hz",0)));
         } catch (org.json.JSONException e) { detailView.setText("受信統計を読み取れません"); }
+    }
+    private void saveIqCapture() {
+        if(choosingSaveTarget || IqDownloads.isBusy() || !IqCaptureProvider.latest(this).isFile()) return;
+        if(Build.VERSION.SDK_INT>=29) {
+            IqDownloads.save(this,null);
+        } else {
+            // Android 9 uses the system file picker; no storage permission needed.
+            Intent create=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/zip").putExtra(Intent.EXTRA_TITLE,IqDownloads.fileName());
+            try { choosingSaveTarget=true;startActivityForResult(create,SAVE_IQ_REQUEST); }
+            catch(ActivityNotFoundException e) {
+                choosingSaveTarget=false;
+                Toast.makeText(this,"保存先を選べるファイルアプリが見つかりません",Toast.LENGTH_LONG).show();
+            }
+        }
+        render();
     }
     private void shareIqCapture() {
         if(sharing || !IqCaptureProvider.latest(this).isFile()) return;
