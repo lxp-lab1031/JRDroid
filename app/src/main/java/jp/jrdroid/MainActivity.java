@@ -41,7 +41,9 @@ public final class MainActivity extends Activity {
         super.onCreate(saved);
         CrashDiagnostics.install(this);
         int stored = getSharedPreferences("receiver_settings",MODE_PRIVATE).getInt("frequency_hz",DChannels.DEFAULT_HZ);
-        selectedFrequencyHz = RadioChannels.contains(stored) ? stored : DChannels.DEFAULT_HZ;
+        selectedFrequencyHz = RadioChannels.restoreFrequency(stored);
+        if(selectedFrequencyHz!=stored)
+            getSharedPreferences("receiver_settings",MODE_PRIVATE).edit().putInt("frequency_hz",selectedFrequencyHz).apply();
         if (saved != null) {
             launching = saved.getBoolean("launching");
             int pending = saved.getInt("launching_frequency_hz",selectedFrequencyHz);
@@ -63,7 +65,7 @@ public final class MainActivity extends Activity {
         text(body,"JR 在来線デジタル列車無線",14,0xff9eafc5,false);
         space(body,24);
         channelView = text(body,"",14,0xff62d7bb,true);
-        profileNotice = text(body,"142 MHz帯は試験受信です。京急等の音声復号は未確認です。",13,0xffffd596,false);
+        profileNotice = text(body,"146 MHz帯の基地局を試験受信します。京急等の音声復号は未確認です。",13,0xffffd596,false);
         frequencyView = text(body,RadioChannels.mhz(selectedFrequencyHz),42,0xffedf5ff,true);
         text(body,"MHz   /   RTL2832U・R820T",14,0xff9eafc5,false);
         channelButton = button(body,"受信対象・周波数を選択",false);
@@ -73,7 +75,7 @@ public final class MainActivity extends Activity {
         higherFrequency = stepButton(steps,"＋6.25 kHz");
         lowerFrequency.setOnClickListener(v -> selectFrequency(RadioChannels.neighbor(selectedFrequencyHz,-1)));
         higherFrequency.setOnClickListener(v -> selectFrequency(RadioChannels.neighbor(selectedFrequencyHz,1)));
-        text(body,"停止中に選局 → 受信開始。JR Dタイプは標準割当、142 MHz帯は提供画像の設定です。",12,0xff9eafc5,false);
+        text(body,"停止中に選局 → 受信開始。146 MHz帯は京急・京成・北総の基地局設定です。",12,0xff9eafc5,false);
         space(body,12);
         LinearLayout statusCard = card(body);
         text(statusCard,"受信状態",12,0xff9eafc5,false);
@@ -98,7 +100,7 @@ public final class MainActivity extends Activity {
         text(body,"スマホ内で復調・音声合成・再生\nPC・外部サーバー・受信中のインターネットは不要",13,0xff9eafc5,false);
         text(body,"他アプリの音声とミックス再生します。音量・出力先はスマホのメディア設定に従います。",13,0xff9eafc5,false);
         space(body,16);
-        text(body,"JRのD4第1波・旅客一斉、TikTokミックス・Bluetooth出力は実機報告があります。142 MHz帯の音声復号は未確認です。",13,0xffffd596,false);
+        text(body,"JRのD4第1波・旅客一斉、TikTokミックス・Bluetooth出力は実機報告があります。146 MHz帯の音声復号は未確認です。",13,0xffffd596,false);
         TextView driverLink = text(body,"ドライバーの導入案内を開く ↗",13,0xff62d7bb,false);
         driverLink.setPadding(0,dp(20),0,dp(8));
         driverLink.setOnClickListener(v -> startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://play.google.com/store/apps/details?id="+DRIVER))));
@@ -138,7 +140,7 @@ public final class MainActivity extends Activity {
     private void chooseChannel() {
         if (tuningLocked()) return;
         new AlertDialog.Builder(this).setTitle("受信対象")
-            .setItems(new String[]{"JR Dタイプ · 352 MHz帯","142 MHz帯 · 私鉄設定の試験受信"},(dialog,which) -> chooseChannelGroup(which==1))
+            .setItems(new String[]{"JR Dタイプ · 352 MHz帯","京急・京成・北総 基地局 · 146 MHz帯（試験）"},(dialog,which) -> chooseChannelGroup(which==1))
             .setNegativeButton("閉じる",null).show();
     }
     private void chooseChannelGroup(boolean experimental) {
@@ -146,7 +148,7 @@ public final class MainActivity extends Activity {
         String[] options = new String[RadioChannels.count(experimental)];
         for (int i=0;i<options.length;i++) options[i] = RadioChannels.option(RadioChannels.at(experimental,i));
         int checked=RadioChannels.isExperimental(selectedFrequencyHz)==experimental?RadioChannels.index(selectedFrequencyHz):-1;
-        new AlertDialog.Builder(this).setTitle(experimental?"画像の142 MHz設定（復号未確認）":"JR Dタイプ · 352 MHz帯")
+        new AlertDialog.Builder(this).setTitle(experimental?"146 MHz帯 · 基地局（復号未確認）":"JR Dタイプ · 352 MHz帯")
             .setSingleChoiceItems(options,checked,(dialog,which) -> {
                 selectFrequency(RadioChannels.at(experimental,which)); dialog.dismiss();
             })
@@ -160,7 +162,7 @@ public final class MainActivity extends Activity {
         input.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         input.setPadding(dp(24),dp(12),dp(24),dp(12));
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle("受信周波数 (MHz)")
-            .setMessage("JRの22波、または画像の142 MHz帯16波を指定してください。例: 142.48125 / 352.56250")
+            .setMessage("JRの22波、または146 MHz帯の基地局16波を指定してください。例: 146.48125 / 352.56250")
             .setView(input).setPositiveButton("設定",null).setNegativeButton("キャンセル",null).create();
         dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button -> {
             try {

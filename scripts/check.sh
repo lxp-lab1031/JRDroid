@@ -22,5 +22,5 @@ cargo run --manifest-path native/Cargo.toml --locked --release -p jrdroid --exam
 java -Djava.library.path=native/target/release -cp app/build/host-tests jp.jrdroid.JniSmokeTest app/build/host-tests/synthetic.u8
 java -Djava.library.path=native/target/release -cp app/build/host-tests jp.jrdroid.PowerPathTest
 java -cp app/build/host-tests jp.jrdroid.SessionLifecycleTest
-java -Djava.library.path=native/target/release -cp app/build/host-tests jp.jrdroid.Private142Test app/build/host-tests/synthetic.u8 app/build/host-tests/private-synthetic.jrd-iq
+java -Djava.library.path=native/target/release -cp app/build/host-tests jp.jrdroid.PrivateBaseStationTest app/build/host-tests/synthetic.u8 app/build/host-tests/private-synthetic.jrd-iq
 python3 scripts/inspect-capture.py app/build/host-tests/private-synthetic.jrd-iq

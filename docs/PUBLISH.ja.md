@@ -2,6 +2,10 @@
 
 公開先: https://github.com/lxp-lab1031/JRDroid
 
+## v0.3.1-alpha: 146 MHz帯の基地局設定へ修正
+
+ユーザーの訂正と新しい設定写真に基づき、142 MHz帯の移動局16波を削除し、146 MHz帯の基地局16波へ置き換えました。音声・データ・基地局の名称を表示し、旧保存設定を対応する基地局側へ移行します。**京急等の音声復号は引き続き未確認**です。生成物は `JRDroid-0.3.1-alpha-debug.apk` / `JRDroid-0.3.1-alpha-standalone.apk` / `JRDroid-0.3.1-alpha-source.zip` です。[試験手順](PRIVATE_BASE_STATION_TEST.ja.md) を参照してください。過去の配布物は版を明示して保持しています。
+
 ## v0.3.0-alpha: 142 MHz帯の試験受信版
 
 画像のK1/K2/K3/北総16設定を追加し、5秒相当の未復調IQ保存・共有に対応しました。**京急の専用方式・音声復号は未確認**です。生成物は `JRDroid-0.3.0-alpha-debug.apk` / `JRDroid-0.3.0-alpha-standalone.apk` / `JRDroid-0.3.0-alpha-source.zip` です。詳細は [試験手順](PRIVATE_142_TEST.ja.md) を参照してください。取得した `.jrd-iq` は公開用ソースに含めません。

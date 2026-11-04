@@ -6,19 +6,32 @@ import java.nio.file.*;
 import java.util.*;
 
 /** These are JR synthetic waveforms; they do not validate a Keikyu air interface. */
-public final class Private142Test {
+public final class PrivateBaseStationTest {
     private static void check(boolean value) { if(!value) throw new AssertionError(); }
     public static void main(String[] args) throws Exception {
-        int[] expected={142493750,142481250,142506250,142518750,142500000,142487500,142512500,142525000,
-            142550000,142537500,142562500,142575000,142818750,142806250,142831250,142843750};
+        int[] expected={146493750,146481250,146506250,146518750,146500000,146487500,146512500,146525000,
+            146550000,146537500,146562500,146575000,146818750,146806250,146831250,146843750};
         check(RadioChannels.count(true)==16);
         for(int i=0;i<DChannels.count();i++) {
-            int hz=DChannels.at(i);check(!RadioChannels.isExperimental(hz));check(RadioChannels.label(hz).equals(DChannels.label(hz)));
+            int hz=DChannels.at(i);check(!RadioChannels.isExperimental(hz));check(RadioChannels.label(hz).equals(DChannels.label(hz)));check(RadioChannels.restoreFrequency(hz)==hz);
         }
         byte[] iq=Files.readAllBytes(Path.of(args[0]));
         for(int i=0;i<expected.length;i++) {
             int hz=RadioChannels.at(true,i);check(hz==expected[i]);
             check(RadioChannels.isExperimental(hz));check(RadioChannels.parseMhz(RadioChannels.mhz(hz))==hz);
+            check(RadioChannels.label(hz).contains("基地局"));
+            check(RadioChannels.label(hz).contains(i%4==0?"データ":"音声"));
+            check(RadioChannels.restoreFrequency(hz)==hz);
+            int mobile=hz-4000000;
+            check(!RadioChannels.contains(mobile));check(!RadioChannels.isExperimental(mobile));
+            check(RadioChannels.restoreFrequency(mobile)==hz);
+            try { RadioChannels.parseMhz(String.format(Locale.ROOT,"%.5f",mobile/1000000.0));throw new AssertionError(); }
+            catch(IllegalArgumentException expectedError) { }
+            ByteArrayOutputStream rejected=new ByteArrayOutputStream();
+            try { RtlTcp.configure(rejected,null,mobile);throw new AssertionError(); }
+            catch(IllegalArgumentException expectedError) {check(rejected.size()==0);}
+            try(NativeReceiver unused=new NativeReceiver(mobile)) {throw new AssertionError();}
+            catch(IllegalArgumentException expectedError) { }
             ByteArrayOutputStream command=new ByteArrayOutputStream();RtlTcp.configure(command,null,hz);
             DataInputStream in=new DataInputStream(new ByteArrayInputStream(command.toByteArray()));
             check(in.readUnsignedByte()==2);check(in.readInt()==240000);check(in.readUnsignedByte()==1);check(in.readInt()==hz);
@@ -32,10 +45,12 @@ public final class Private142Test {
                 check(samples>=3200);
             }
         }
+        for(int invalid:new int[]{0,-1,Integer.MIN_VALUE,Integer.MAX_VALUE,142493751,146493751})
+            check(RadioChannels.restoreFrequency(invalid)==DChannels.DEFAULT_HZ);
         check(RadioChannels.neighbor(expected[0],-1)==expected[0]);
         check(RadioChannels.neighbor(expected[15],1)==expected[15]);
-        for(int hz:new int[]{142000000,142493751,142600000,352500000}) check(!RadioChannels.contains(hz));
-        System.out.println("PASS: 16 image-derived presets reach tuner/JNI; JR presets preserved; synthetic JR PCM only");
+        for(int hz:new int[]{146000000,146493751,146600000,352500000}) check(!RadioChannels.contains(hz));
+        System.out.println("PASS: 16 base-station presets reach tuner/JNI; 142 MHz rejected and saved settings migrated; synthetic JR PCM only");
         IqCaptureBuffer capture=new IqCaptureBuffer(expected[1]);byte[] block=new byte[32768];
         int position=0;
         while(!capture.complete()) {
@@ -46,7 +61,7 @@ public final class Private142Test {
         ByteArrayOutputStream data=new ByteArrayOutputStream();capture.writeTo(data);byte[] saved=data.toByteArray();
         int headerEnd=0;while(saved[headerEnd]!='\n') headerEnd++;
         String header=new String(saved,0,headerEnd,StandardCharsets.UTF_8);
-        check(header.contains("\"frequency_hz\":142481250"));check(header.contains("\"complete\":true"));
+        check(header.contains("\"frequency_hz\":146481250"));check(header.contains("\"complete\":true"));
         check(saved.length-headerEnd-1==2400000);
         for(int i=0;i<2400000;i++) check(saved[headerEnd+1+i]==(byte)i);
         IqCaptureBuffer partial=new IqCaptureBuffer(DChannels.DEFAULT_HZ);partial.append(new byte[137],137);

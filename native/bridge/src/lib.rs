@@ -10,10 +10,10 @@ pub const RATE: f64 = 240_000.0;
 pub const MIN_FREQUENCY: u32 = 352_537_500;
 pub const MAX_FREQUENCY: u32 = 352_668_750;
 pub const CHANNEL_STEP: u32 = 6_250;
-// User-supplied Windows settings, not verified private-radio protocol support.
+// User-supplied 146 MHz base-station settings, not verified protocol support.
 pub const PRIVATE_FREQUENCIES: [u32; 16] = [
-    142493750, 142481250, 142506250, 142518750, 142500000, 142487500, 142512500, 142525000,
-    142550000, 142537500, 142562500, 142575000, 142818750, 142806250, 142831250, 142843750,
+    146493750, 146481250, 146506250, 146518750, 146500000, 146487500, 146512500, 146525000,
+    146550000, 146537500, 146562500, 146575000, 146818750, 146806250, 146831250, 146843750,
 ];
 
 pub struct Receiver {
@@ -33,7 +33,7 @@ impl Receiver {
             && (hz - MIN_FREQUENCY).is_multiple_of(CHANNEL_STEP);
         if !jr && !PRIVATE_FREQUENCIES.contains(&hz) {
             return Err(
-                "Select a JR D-type channel or one of the 16 experimental 142 MHz presets".into(),
+                "Select a JR D-type channel or one of the 16 experimental 146 MHz base-station presets".into(),
             );
         }
         let frequency = f64::from(hz);
@@ -274,8 +274,10 @@ mod tests {
             assert_eq!(status["frequency_hz"], hz);
             assert_eq!(status["experimental_private"], true);
             assert_eq!(r.pipeline.config.format, Format::Slotted);
+            // The previous mobile-station presets must no longer be accepted.
+            assert!(Receiver::at_frequency(hz - 4_000_000).is_err());
         }
-        for hz in [142000000, 142493751, 142600000, 142843751] {
+        for hz in [142000000, 146493751, 146600000, 146843751] {
             assert!(Receiver::at_frequency(hz).is_err());
         }
     }
